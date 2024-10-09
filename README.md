@@ -17,6 +17,11 @@ Power systems are increasingly complex, with the need for efficient and reliable
 - **Scalability**: Supports large-scale problems, suitable for both academic research and practical applications.
 - **Modular Design**: Easily extendable for different optimization scenarios, from short-term operations to long-term planning.
 
+## Disclaimer
+
+This is a personal project, so bear with me as I continue to improve and expand the repository!
+
+
 ## Getting Started
 
 To get started, clone the repository and add `GridOpt.jl` to your Julia environment:

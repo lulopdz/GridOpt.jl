@@ -1,6 +1,5 @@
 # ==============================================================================
 # Deterministic Network-Constrained Static GEP
-
 using JuMP, Gurobi, Ipopt
 
 # ==============================================================================
@@ -17,8 +16,8 @@ Q = 5
 
 # Indices
 C = 1:C         # Candidate generating units
-D = 1:D         # Demands
 G = 1:G         # Existing generating units
+D = 1:D         # Demands
 L = 1:L         # Transmission lines
 N = 1:N         # Nodes
 O = 1:O         # Operating conditions
@@ -26,7 +25,7 @@ T = 1:T         # Time periods
 Ω = 1:Ω         # Scenarios
 Q = 1:Q         # Generation capacity blocks
 
-# # Sets 
+# Sets 
 r = [2]         # Receiving-end node of transmission line
 s = [1]         # Sending-end node of transmission line
 Ω_C = [0 1]     # Candidate generating units located at node n
@@ -36,13 +35,13 @@ ng = Dict(1 => 1)
 nc = Dict(1 => 2)
 Nr = [2]
 
-# # Parameters
+# Parameters
 a = [0.2, 0.1]    # Amortization rate [%]
 B = 500           # Susceptance of transmission line [S]
-C_C = [25 25]  # Production cost of candidate generating unit c [$/MWh]
-C_E = [35 35]  # Production cost of existing generating unit g [$/MWh]
-# C_LS            # Load-shedding cost of demand d [$/MWh]
+C_C = [25 25]     # Production cost of candidate generating unit c [$/MWh]
+C_E = [35 35]     # Production cost of existing generating unit g [$/MWh]
 F = 200           # Capacity of transmission line [MW]
+# C_LS            # Load-shedding cost of demand d [$/MWh]
 # I_C             # Investment cost of candidate generating unit c [$/MW]
 I_C_A = [700000 700000]    # Annualized inv cost of candidate generating unit c [$/MW]
 PCmax = 500       # Maximum production capacity of generating unit c [MW]
@@ -52,17 +51,19 @@ PD = [[[246.5 290], [467.5 550]]]
 # Load of demand d [MW]
 PEmax = 400       # Production capacity of existing generating unit g [MW]
 # ϕ               # Probability of scenario ω [pu]
-ρ = [6000 6000;
-     2760 2760]  # Weight of operating condition o [h]
+ρ = [
+     6000 6000;
+     2760 2760
+]  # Weight of operating condition o [h]
 
-M = 1e20          # Big number
+M = 1e10          # Big number
 ref = 1           # Slack node
 
 # # Variables 
 # # Binary 
 # u_cq            # Binary variable 
 
-# # Continuous
+# Continuous
 # pC              # Power produced by candidate generating unit c [MW]
 # pCmax           # Capacity of candidate generating unit c [MW]
 # pE              # Power produced by existing generating unit g [MW]
@@ -184,19 +185,3 @@ annual_inv = sum(a[t]*sum(I_C_A[c,t]*pCmax[c,t] for c in C) for t in T)
 optimize!(mip)
 
 println(value.(pCmax))
-
-
-# ==============================================================================
-# Clearing market
-
-# market = Model(optimizer)
-
-# @constraint(market, [g in G], 0 <= pE[g,o] <= PEmax[g])
-# @constraint(market, [c in C], 0 <= pC[c,o] <= pCmax[c])
-# @constraint(market, sum(pE[g,o] for g in G) + 
-#             sum(pC[c,o] for c in C) == sum(PD[d,o] for d in D))
-
-# gen_cost = sum(C_E[g]*pE[g,o] for g in G) + 
-#            sum(C_C[c]*pC[c,o] for c in C)
-
-# @objective(market, Min, gen_cost)

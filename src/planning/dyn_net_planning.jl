@@ -1,6 +1,12 @@
 # ==============================================================================
-# Deterministic Network-Constrained Static GEP
+# Deterministic Dynamic Network-Constrained Static GEP
 using JuMP, Gurobi, Ipopt
+
+# ==============================================================================
+# Data structure proposed for the problem
+
+cf = pwd()
+include(cf * "/GridOpt.jl/data/case14.jl")
 
 # ==============================================================================
 # Notation
@@ -15,11 +21,20 @@ T = 2
 Q = 5
 
 # Indices
-C = 1:C         # Candidate generating units
-G = 1:G         # Existing generating units
+# C = 1:C         # Candidate generating units
+C = mpc["cgen"][:,1]
+
+# G = 1:G         # Existing generating units
+G = mpc["gen"][:,1]
+
 D = 1:D         # Demands
-L = 1:L         # Transmission lines
-N = 1:N         # Nodes
+
+# L = 1:L
+L = 1:length(mpc["branch"][:,1])         # Transmission lines
+
+# N = 1:N         # Nodes
+N = mpc["bus"][:,1]
+
 O = 1:O         # Operating conditions
 T = 1:T         # Time periods
 Ω = 1:Ω         # Scenarios
@@ -28,6 +43,9 @@ Q = 1:Q         # Generation capacity blocks
 # Sets 
 r = [2]         # Receiving-end node of transmission line
 s = [1]         # Sending-end node of transmission line
+r = mpc["branch"][:,1]
+s = mpc["branch"][:,2]
+
 Ω_C = [0 1]     # Candidate generating units located at node n
 Ω_D = [0 1]     # Demands located at node n
 Ω_E = [1 0]     # Existing generating units located at node n

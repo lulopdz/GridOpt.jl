@@ -135,7 +135,7 @@ annual_inv = sum(a[t]*sum(I_C_A[c,t]*pCmax[c,t] for c in C) for t in T)
 
 optimize!(mip)
 
-println(value.(uOpt))
+println(value.(pCmax))
 
 
 

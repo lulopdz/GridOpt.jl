@@ -1,81 +1,123 @@
 # ==============================================================================
-# Deterministic Dynamic Network-Constrained Static GEP
-using JuMP, Gurobi, Ipopt
+# Deterministic Network-Constrained Static GEP
+using JuMP, Gurobi, Ipopt, HiGHS
 
-# ==============================================================================
-# Data structure proposed for the problem
-
-cf = pwd()
-include(cf * "/GridOpt.jl/data/case14.jl")
+# Functions
+function map_nodes(gens::Vector{Int}, nodes::Vector{Int}, node_range::UnitRange{Int})
+     node_gens = Dict{Int, Vector{Int}}(node => Int[] for node in node_range)
+     # Populate the dictionary
+     for (gen, node) in zip(gens, nodes)
+         push!(node_gens[node], gen)
+     end
+ 
+     return node_gens
+ end
 
 # ==============================================================================
 # Notation
-C = 1 
-D = 1 
-G = 1 
-L = 1 
-N = 2
+cand = Dict(
+    :ID   => [1, 2],
+    :Node => [2, 2],
+
+    # For each candidate i, store a vector [cost_in_t_1, cost_in_t_2, ...]
+    :Prod_cost  => [
+        [25.0, 25.0],
+        [25.0, 25.0],
+    ],
+
+    :Inv_cost   => [
+        [700000, 700000],
+        [700000, 700000],
+    ],
+
+    :Prod_cap   => [
+        [[0 100 200 300 400], [0 100 200 300 400]],
+        [[0 100 200 300 400], [0 100 200 300 400]],
+    ]
+)
+
+exist = Dict(
+    :ID   => [1],
+    :Node => [1],
+    :Max_cap => [400],
+
+    # For each existing generator i, a vector [cost_in_t1, cost_in_t2] 
+    :Prod_cost => [
+        [35.0, 35.0],
+    ],   
+)
+
+lines = Dict(
+    :ID          => [1],              # List of line IDs
+    :From        => [1],              # Sending (from) node
+    :To          => [2],              # Receiving (to) node
+    :Susceptance => [500.0],          # Susceptance of transmission line [S]
+    :Capacity    => [200.0],          # Capacity of transmission line [MW]
+)
+
+demands = Dict(
+    :ID   => [1],
+    :Node => [2],
+
+    :Load => [
+        [
+            [246.5 290],  # o=1 => T=1,2
+            [467.5 550]   # o=2 => T=1,2
+        ]
+    ]
+)
+
+C = length(cand[:ID])
+G = length(exist[:ID]) 
+L = length(lines[:ID])
+N = maximum([maximum(lines[:From]) maximum(lines[:To])])
+D = length(demands[:ID])
 O = 2
 T = 2 
-Ω = 1
 Q = 5
 
 # Indices
-# C = 1:C         # Candidate generating units
-C = mpc["cgen"][:,1]
-
-# G = 1:G         # Existing generating units
-G = mpc["gen"][:,1]
-
+C = 1:C         # Candidate generating units
+G = 1:G         # Existing generating units
 D = 1:D         # Demands
-
-# L = 1:L
-L = 1:length(mpc["branch"][:,1])         # Transmission lines
-
-# N = 1:N         # Nodes
-N = mpc["bus"][:,1]
-
+L = 1:L         # Transmission lines
+N = 1:N         # Nodes
+ref = 1           # Slack node
+Nr = N[2:end]   # Nodes
 O = 1:O         # Operating conditions
 T = 1:T         # Time periods
-Ω = 1:Ω         # Scenarios
 Q = 1:Q         # Generation capacity blocks
 
 # Sets 
-r = [2]         # Receiving-end node of transmission line
-s = [1]         # Sending-end node of transmission line
-r = mpc["branch"][:,1]
-s = mpc["branch"][:,2]
+r = lines[:To]                          # Receiving-end node of transmission line
+s = lines[:From]                        # Sending-end node of transmission line
+ng = exist[:Node]                      # Node of existing generating unit g
+nc = cand[:Node]                       # Node of candidate generating unit c
 
-Ω_C = [0 1]     # Candidate generating units located at node n
-Ω_D = [0 1]     # Demands located at node n
-Ω_E = [1 0]     # Existing generating units located at node n
-ng = Dict(1 => 1)
-nc = Dict(1 => 2)
-Nr = [2]
+Ω_C = map_nodes(cand[:ID], cand[:Node], N)             # Candidate generating units located at node n
+Ω_D = map_nodes(demands[:ID], demands[:Node], N)       # Demands located at node n
+Ω_E = map_nodes(exist[:ID], exist[:Node], N)           # Existing generating units located at node n
 
 # Parameters
-a = [0.2, 0.1]    # Amortization rate [%]
-B = 500           # Susceptance of transmission line [S]
-C_C = [25 25]     # Production cost of candidate generating unit c [$/MWh]
-C_E = [35 35]     # Production cost of existing generating unit g [$/MWh]
-F = 200           # Capacity of transmission line [MW]
-# C_LS            # Load-shedding cost of demand d [$/MWh]
-# I_C             # Investment cost of candidate generating unit c [$/MW]
-I_C_A = [700000 700000]    # Annualized inv cost of candidate generating unit c [$/MW]
-PCmax = 500       # Maximum production capacity of generating unit c [MW]
-P_Opt = [[[0 100 200 300 400], [0 100 200 300 400]]] 
-# Production capacity of inv option q of gen unit c [MW]
-PD = [[[246.5 290], [467.5 550]]]
-# Load of demand d [MW]
-PEmax = 400       # Production capacity of existing generating unit g [MW]
-# ϕ               # Probability of scenario ω [pu]
+B = lines[:Susceptance]                 # Susceptance of transmission line [S]
+F = lines[:Capacity]                    # Capacity of transmission line [MW]
+PD = demands[:Load]                     # Load of demand d [MW]
+
+C_C = cand[:Prod_cost]                  # Production cost of candidate generating unit c [$/MWh]
+I_C_A = cand[:Inv_cost]                 # Annualized inv cost of candidate generating unit c [$/MW]
+P_Opt = cand[:Prod_cap]                 # Production capacity of inv option q of gen unit c [MW]
+
+C_E = exist[:Prod_cost]                 # Production cost of existing generating unit g [$/MWh]
+PEmax = exist[:Max_cap]                 # Production capacity of existing generating unit g [MW]
+
+# Economic Parameters
+a = [0.2, 0.1]                          # Amortization rate [%]
 ρ = [
-     6000 6000;
-     2760 2760
-]  # Weight of operating condition o [h]
+     [6000 6000],
+     [2760 2760]
+]                                       # Weight of operating condition o [h]
 
 M = 1e10          # Big number
-ref = 1           # Slack node
 
 # # Variables 
 # # Binary 
@@ -88,10 +130,9 @@ ref = 1           # Slack node
 # pL              # Power flow through transmission line [MW]
 # θ               # Voltage angle at node n [rad]
 
-
 # ==============================================================================
 # Model
-optimizer_mip = Gurobi.Optimizer
+optimizer_mip = HiGHS.Optimizer
 mip = Model(optimizer_mip)
 
 # Variables
@@ -141,10 +182,10 @@ mip = Model(optimizer_mip)
 )
 @constraint(mip, [n in N, o in O, t in T], -pi <= θ[n,o,t] <= pi)
 @constraint(mip, [n in ref, o in O, t in T], θ[n,o,t] == 0)
-@constraint(mip, [g in G, o in O, t in T], C_E[g,t] - 
+@constraint(mip, [g in G, o in O, t in T], C_E[g][t] - 
             λ[ng[g],o,t] + μEmax[g,o,t] >= 0
 )
-@constraint(mip, [c in C, o in O, t in T], C_C[c,t] - 
+@constraint(mip, [c in C, o in O, t in T], C_C[c][t] - 
             λ[nc[c],o,t] + μCmax[c,o,t] >= 0
 )
 @constraint(mip, [l in L, o in O, t in T], λ[s[l],o,t] - λ[r[l],o,t] - 
@@ -169,8 +210,8 @@ mip = Model(optimizer_mip)
 @constraint(mip, [n in Nr, o in O, t in T], μAmax[n,o,t] >= 0)
 @constraint(mip, [n in Nr, o in O, t in T], μAmin[n,o,t] >= 0)
 
-@constraint(mip, [o in O, t in T], sum(C_E[g,t]*pE[g,o,t] for g in G) + 
-            sum(C_C[c,t]*pC[c,o,t] for c in C) == 
+@constraint(mip, [o in O, t in T], sum(C_E[g][t]*pE[g,o,t] for g in G) + 
+            sum(C_C[c][t]*pC[c,o,t] for c in C) == 
             sum(λ[n,o,t]*sum(PD[d][o][t] for d in Ω_D[n] if d!=0) for n in N) - 
             sum(μEmax[g,o,t]*PEmax[g] for g in G) - 
             sum(sum(zAux[c,q,o,t] for q in Q) for c in C) - 
@@ -193,13 +234,20 @@ mip = Model(optimizer_mip)
 
 
 # Objective
-gen_cost = sum(sum(ρ[o]*(sum(C_E[g,t]*pE[g,o,t] for g in G) + 
-                sum(C_C[c,t]*pC[c,o,t] for c in C)) for o in O) for t in T)
+gen_cost = sum(sum(ρ[o][t]*(sum(C_E[g][t]*pE[g,o,t] for g in G) + 
+                sum(C_C[c][t]*pC[c,o,t] for c in C)) for o in O) for t in T)
 
-annual_inv = sum(a[t]*sum(I_C_A[c,t]*pCmax[c,t] for c in C) for t in T)
+annual_inv = sum(a[t]*sum(I_C_A[c][t]*pCmax[c,t] for c in C) for t in T)
 
 @objective(mip, Min, gen_cost + annual_inv)
 
 optimize!(mip)
+
+for t in T, o in O 
+     println(" Time period: ", t, "Operating condition: ", o)
+     println("Production power: ", sum(value.(pC)[:,o,t]))
+     println("Production power E: ", sum(value.(pE)[:,o,t]))
+     println("Demand: ", sum(PD[d][o][t] for d in D))
+end
 
 println(value.(pCmax))

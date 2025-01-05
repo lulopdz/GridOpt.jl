@@ -1,6 +1,5 @@
 # ==============================================================================
 # Deterministic Single-Node Static GEP
-
 using JuMP, Gurobi, Ipopt
 
 # ==============================================================================
@@ -51,7 +50,7 @@ PEmax = 400       # Production capacity of existing generating unit g [MW]
 # ϕ               # Probability of scenario ω [pu]
 ρ = [6000 6000;
      2760 2760]  # Weight of operating condition o [h]
-M = 1e20          # Big number
+M = 1e10          # Big number
 
 # # Variables 
 # # Binary 
@@ -67,7 +66,7 @@ M = 1e20          # Big number
 
 # ==============================================================================
 # Model
-optimizer_mip = Gurobi.Optimizer
+optimizer_mip = HiGHS.Optimizer
 mip = Model(optimizer_mip)
 
 # Variables
@@ -111,7 +110,6 @@ mip = Model(optimizer_mip)
             sum(C_C[c,t]*pC[c,o,t] for c in C) == 
             λ[o,t]*sum(PD[d][o][t] for d in D) - 
             sum(μEmax[g,o,t]*PEmax[g] for g in G) - 
-            sum(μCmax[c,o,t]*pCmax[c,t] for c in C) - 
             sum(zAux[c,q,o,t] for q in Q, c in C))
 
 @constraint(mip, [c in C, q in Q, o in O, t in T], zAux[c,q,o,t] == 

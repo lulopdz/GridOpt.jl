@@ -1,119 +1,75 @@
 # ==============================================================================
-# Deterministic Network-Constrained Static GEP
-using JuMP, Gurobi, Ipopt, HiGHS
+# Deterministic Static Network-Constrained GEP
 
-# Functions
-function map_nodes(gens::Vector{Int}, nodes::Vector{Int}, node_range::UnitRange{Int})
-    node_gens = Dict{Int, Vector{Int}}(node => Int[] for node in node_range)
-    # Populate the dictionary
-    for (gen, node) in zip(gens, nodes)
-        push!(node_gens[node], gen)
-    end
-
-    return node_gens
-end
+# The approach is deterministic, meaning it does not account 
+# for uncertainties in the input data.
+# It is static, considering a single time period for planning.
+# The model is network-constrained, taking into account 
+# the limitations and capacities of the electrical network.
 
 # ==============================================================================
-# Notation
-cand = Dict(
-   :ID   => [1, 2],
-   :Node => [2, 2],
-   :Prod_cost  => [25, 55],
-   :Inv_cost   => [70000, 70000],
+# Packages
+using JuMP, Gurobi, Ipopt
 
-   :Prod_cap   => [
-       [0 100 200 300 400],
-       [0 100 200 300 400],
-   ]
-)
+# ==============================================================================
+# Include utility functions and test data for planning
+pf = pwd()
+include(pf * "/GridOpt.jl/src/planning/utils.jl")
+include(pf * "/GridOpt.jl/data/planning/test.jl")
 
-exist = Dict(
-   :ID   => [1],
-   :Node => [1],
-   :Max_cap => [400],
-   :Prod_cost => [35]
-)
+cand, exist, lines, demands = static_net_format(cand, exist, lines, demands)
 
+# ==============================================================================
+# Maximum dimensions
+nC = length(cand[:ID])
+nG = length(exist[:ID]) 
+nD = length(demands[:ID])
+nL = length(lines[:ID])
+nN = maximum([maximum(lines[:From]) maximum(lines[:To])])
+nO = length(demands[:Load][1])
+nQ = length(cand[:Prod_cap][1])
+ref = 1                                 # Slack node
 
-lines = Dict(
-   :ID          => [1],              # List of line IDs
-   :From        => [1],              # Sending (from) node
-   :To          => [2],              # Receiving (to) node
-   :Susceptance => [500.0],          # Susceptance of transmission line [S]
-   :Capacity    => [200.0],          # Capacity of transmission line [MW]
-)
+# Sets
+C = 1:nC                                # Candidate generating units
+G = 1:nG                                # Existing generating units
+D = 1:nD                                # Demands
+L = 1:nL                                # Transmission lines
+N = 1:nN                                # Nodes
+Nr = N[2:end]                           # Nodes without slack node
+O = 1:nO                                # Operating conditions
+Q = 1:nQ                                # Generation capacity blocks
 
-demands = Dict(
-   :ID   => [1],
-   :Node => [2],
-
-   :Load => [
-       [290, 550]
-   ]
-)
-
-# Notation
-C = length(cand[:ID])
-D = length(demands[:ID])
-G = length(exist[:ID]) 
-L = length(lines[:ID])
-N = maximum([maximum(lines[:From]) maximum(lines[:To])])
-O = 2
-Q = 5
-
-# Indices
-C = 1:C         # Candidate generating units
-D = 1:D         # Demands
-G = 1:G         # Existing generating units
-L = 1:L         # Transmission lines
-N = 1:N         # Nodes
-ref = 1         # Slack node
-Nr = N[2:end]   # Nodes
-O = 1:O         # Operating conditions
-Q = 1:Q         # Generation capacity blocks
-
-# Sets 
 r = lines[:To]                          # Receiving-end node of transmission line
 s = lines[:From]                        # Sending-end node of transmission line
-ng = exist[:Node]                      # Node of existing generating unit g
-nc = cand[:Node]                       # Node of candidate generating unit c
+ng = exist[:Node]                       # Node of existing generating unit g
+nc = cand[:Node]                        # Node of candidate generating unit c
 
 Ω_C = map_nodes(cand[:ID], cand[:Node], N)             # Candidate generating units located at node n
 Ω_D = map_nodes(demands[:ID], demands[:Node], N)       # Demands located at node n
 Ω_E = map_nodes(exist[:ID], exist[:Node], N)           # Existing generating units located at node n
 
+# ==============================================================================
 # Parameters
 B = lines[:Susceptance]                 # Susceptance of transmission line [S]
 F = lines[:Capacity]                    # Capacity of transmission line [MW]
+
 PD = demands[:Load]                     # Load of demand d [MW]
 
-# # Parameters
-C_C = cand[:Prod_cost]          # Production cost of candidate generating unit c [$/MWh]
+C_C = cand[:Prod_cost]                  # Production cost of candidate generating unit c [$/MWh]
+I_C_A = cand[:Inv_cost]                 # Annualized inv cost of candidate generating unit c [$/MW]
+P_Opt = cand[:Prod_cap]                 # Production capacity of inv option q of gen unit c [MW]
+
 C_E = exist[:Prod_cost]                 # Production cost of existing generating unit g [$/MWh]
-I_C_A = cand[:Inv_cost]     # Annualized inv cost of candidate generating unit c [$/MW]
-P_Opt = cand[:Prod_cap]  # Production capacity of inv option q of gen unit c [MW]
-PD = demands[:Load]  # Load of demand d [MW]
-PEmax = exist[:Max_cap]       # Production capacity of existing generating unit g [MW]
+PEmax = exist[:Max_cap]                 # Production capacity of existing generating unit g [MW]
 
-# ϕ               # Probability of scenario ω [pu]
-ρ = [6000, 2760]  # Weight of operating condition o [h]
-M = 1e10          # Big number
-
-# # Variables 
-# # Binary 
-# u_cq            # Binary variable 
-
-# # Continuous
-# pC              # Power produced by candidate generating unit c [MW]
-# pCmax           # Capacity of candidate generating unit c [MW]
-# pE              # Power produced by existing generating unit g [MW]
-# pL              # Power flow through transmission line [MW]
-# θ               # Voltage angle at node n [rad]
-
+# Economic Parameters
+a = a[1]
+ρ = ρ[1]                                # Weight of operating condition o [h]
 
 # ==============================================================================
 # Model
-optimizer_mip = HiGHS.Optimizer
+optimizer_mip = Gurobi.Optimizer
 mip = Model(optimizer_mip)
 
 # Variables
@@ -209,7 +165,7 @@ mip = Model(optimizer_mip)
 gen_cost = sum(ρ[o]*(sum(C_E[g]*pE[g,o] for g in G) + 
                 sum(C_C[c]*pC[c,o] for c in C)) for o in O)
 
-annual_inv = sum(I_C_A[c]*pCmax[c] for c in C)
+annual_inv = sum(a*I_C_A[c]*pCmax[c] for c in C)
 @objective(mip, Min, gen_cost + annual_inv)
 
 optimize!(mip)
@@ -221,4 +177,24 @@ for o in O
     println("Demand: ", sum(PD[d][o] for d in D))
 end
 
-println(value.(pCmax))
+
+# ==============================================================================
+# Results
+for o in O
+    println("========================================")
+    println("Operating condition: ", o)
+    println("----------------------------------------")
+    println("Production power (Candidate): ", sum(value.(pC[:, o])))
+    println("Production power (Existing): ", sum(value.(pE[:, o])))
+    println("Total Demand: ", sum(PD[d][o] for d in D))
+    println(" ")
+end
+
+println("========================================")
+println("Maximum Production Power (Candidate):")
+for c in C
+    capacity = value(pCmax[c])
+    println("  Candidate: ", c, " | Capacity: ", capacity)
+end
+
+println("Total Capacity: ", sum(value.(pCmax)))

@@ -2,19 +2,10 @@
 # Deterministic Network-Constrained Static GEP
 using JuMP, Gurobi, Ipopt, HiGHS
 
-# Functions
-function map_nodes(gens::Vector{Int}, nodes::Vector{Int}, node_range::UnitRange{Int})
-     node_gens = Dict{Int, Vector{Int}}(node => Int[] for node in node_range)
-     # Populate the dictionary
-     for (gen, node) in zip(gens, nodes)
-         push!(node_gens[node], gen)
-     end
- 
-     return node_gens
- end
+include("planning_utils.jl")
 
 # ==============================================================================
-# Notation
+# Grid data
 cand = Dict(
     :ID   => [1, 2],
     :Node => [2, 2],
@@ -61,8 +52,8 @@ demands = Dict(
 
     :Load => [
         [
-            [246.5 290],  # o=1 => T=1,2
-            [467.5 550]   # o=2 => T=1,2
+            [246.5 467.5],  # t=1 => o=1,2
+            [290    550]    # t=2 => o=1,2
         ]
     ]
 )
@@ -82,7 +73,7 @@ G = 1:G         # Existing generating units
 D = 1:D         # Demands
 L = 1:L         # Transmission lines
 N = 1:N         # Nodes
-ref = 1           # Slack node
+ref = 1         # Slack node
 Nr = N[2:end]   # Nodes
 O = 1:O         # Operating conditions
 T = 1:T         # Time periods
@@ -113,8 +104,8 @@ PEmax = exist[:Max_cap]                 # Production capacity of existing genera
 # Economic Parameters
 a = [0.2, 0.1]                          # Amortization rate [%]
 ρ = [
-     [6000 6000],
-     [2760 2760]
+     [6000 2760], # T = 1, o = 1,2
+     [6000 2760]  # T = 2, o = 1,2
 ]                                       # Weight of operating condition o [h]
 
 M = 1e10          # Big number
@@ -169,7 +160,7 @@ mip = Model(optimizer_mip)
             sum(pC[c,o,t] for c in Ω_C[n] if c!=0) - 
             sum(pL[l,o,t] for l in L if s[l]==n) + 
             sum(pL[l,o,t] for l in L if r[l]==n)
-            == sum(PD[d][o][t] for d in Ω_D[n] if d!=0)
+            == sum(PD[d][t][o] for d in Ω_D[n] if d!=0)
 )
 @constraint(mip, [l in L, o in O, t in T], 
             pL[l,o,t] == B[l]*(θ[r[l],o,t] - θ[s[l],o,t])
@@ -212,7 +203,7 @@ mip = Model(optimizer_mip)
 
 @constraint(mip, [o in O, t in T], sum(C_E[g][t]*pE[g,o,t] for g in G) + 
             sum(C_C[c][t]*pC[c,o,t] for c in C) == 
-            sum(λ[n,o,t]*sum(PD[d][o][t] for d in Ω_D[n] if d!=0) for n in N) - 
+            sum(λ[n,o,t]*sum(PD[d][t][o] for d in Ω_D[n] if d!=0) for n in N) - 
             sum(μEmax[g,o,t]*PEmax[g] for g in G) - 
             sum(sum(zAux[c,q,o,t] for q in Q) for c in C) - 
             sum((μLMax[l,o,t] + μLMin[l,o,t])*F[l] for l in L) - 
@@ -234,7 +225,7 @@ mip = Model(optimizer_mip)
 
 
 # Objective
-gen_cost = sum(sum(ρ[o][t]*(sum(C_E[g][t]*pE[g,o,t] for g in G) + 
+gen_cost = sum(sum(ρ[t][o]*(sum(C_E[g][t]*pE[g,o,t] for g in G) + 
                 sum(C_C[c][t]*pC[c,o,t] for c in C)) for o in O) for t in T)
 
 annual_inv = sum(a[t]*sum(I_C_A[c][t]*pCmax[c,t] for c in C) for t in T)
@@ -244,10 +235,10 @@ annual_inv = sum(a[t]*sum(I_C_A[c][t]*pCmax[c,t] for c in C) for t in T)
 optimize!(mip)
 
 for t in T, o in O 
-     println(" Time period: ", t, "Operating condition: ", o)
+     println("Time period: ", t, " Operating condition: ", o)
      println("Production power: ", sum(value.(pC)[:,o,t]))
      println("Production power E: ", sum(value.(pE)[:,o,t]))
-     println("Demand: ", sum(PD[d][o][t] for d in D))
+     println("Demand: ", sum(PD[d][t][o] for d in D))
 end
 
 println(value.(pCmax))

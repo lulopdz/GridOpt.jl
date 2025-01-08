@@ -9,7 +9,8 @@
 
 # ==============================================================================
 # Packages
-using JuMP, Gurobi, Ipopt
+using JuMP, Gurobi, Ipopt, HiGHS
+using Plots
 
 # ==============================================================================
 # Include utility functions and test data for planning
@@ -65,7 +66,7 @@ PEmax = exist[:Max_cap]                 # Production capacity of existing genera
 
 # ==============================================================================
 # Model
-optimizer_mip = Gurobi.Optimizer
+optimizer_mip = HiGHS.Optimizer
 mip = Model(optimizer_mip)
 
 # Variables
@@ -199,3 +200,10 @@ for t in T
     end
 end
 println("Total Capacity: ", sum(value.(pCmax)))
+println(" ")
+
+println("========================================")
+println("Generation Cost: ", value(gen_cost))
+println("Annual Investment: ", value(annual_inv))
+println("Objective Value: ", objective_value(mip))
+println("Solution time: ", solve_time(mip))

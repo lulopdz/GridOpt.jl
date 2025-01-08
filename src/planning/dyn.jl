@@ -25,7 +25,7 @@ nG = length(exist[:ID])
 nD = length(demands[:ID])
 nT = length(demands[:Load][1])
 nO = length(demands[:Load][1][1])
-nQ = length(cand[:Prod_cap][1])
+nQ = length(cand[:Prod_cap][1][1])
 
 # Indices
 C = 1:nC                                # Candidate generating units
@@ -140,3 +140,9 @@ for t in T
     end
 end
 println("Total Capacity: ", sum(value.(pCmax)))
+println(" ")
+
+println("========================================")
+println("Generation Cost: ", value(gen_cost))
+println("Annual Investment: ", value(annual_inv))
+println("Objective Value: ", objective_value(mip))

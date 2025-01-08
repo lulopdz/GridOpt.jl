@@ -100,3 +100,4 @@ function static_net_format(cand, exist, lines, demands)
 
     return new_cand, new_exist, new_lines, new_demands
 end
+

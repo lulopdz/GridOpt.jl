@@ -46,7 +46,7 @@ C_E = exist[:Prod_cost]                 # Production cost of existing generating
 PEmax = exist[:Max_cap]                 # Production capacity of existing generating unit g [MW]
 
 # Economic Parameters
-a = a[1]
+a = a[1]/2                              # Annualization factor [1/h]
 ρ = ρ[1]                                # Weight of operating condition o [h]
 
 # ==============================================================================
@@ -127,3 +127,10 @@ for c in C
 end
 
 println("Total Capacity: ", sum(value.(pCmax)))
+println(" ")
+
+println("========================================")
+println("Generation Cost: ", value(gen_cost))
+println("Annual Investment: ", value(annual_inv))
+println("Objective Value: ", objective_value(mip))
+println("Solution time: ", solve_time(mip))

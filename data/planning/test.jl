@@ -1,14 +1,25 @@
 # ==============================================================================
 # Grid data full dynamic network planning
+
+# This is a file to read the data from a .xlsx and transform it into 
+# dictionaries to read later for the models.
+
 using DataFrames, XLSX
 
+# ==============================================================================
+# Read Excel File
 pf = pwd()
-ep = pf * "/GridOpt.jl/data/planning/test118.xlsx"
+ep = joinpath(pf, "GridOpt.jl/data/planning/test118.xlsx")
 xf = XLSX.readxlsx(ep)
 
+# Determine the number of time periods and operating conditions
 T = size(xf["economic"][:])[1] - 1
 O = size(xf["economic"][:])[2] - 2
 
+# ==============================================================================
+# Functions to Load Data
+
+# Function to load candidate generators data
 function load_cand(xf, T)
     m = xf["cand"][:]
     df = DataFrame(m[2:end, :], :auto)
@@ -25,6 +36,7 @@ function load_cand(xf, T)
     )
 end
 
+# Function to load existing generators data
 function load_exist(xf, T)
     m = xf["exist"][:]
     df = DataFrame(m[2:end, :], :auto)
@@ -39,6 +51,7 @@ function load_exist(xf, T)
     )
 end
 
+# Function to load transmission lines data
 function load_lines(xf)
     m = xf["lines"][:]
     df = DataFrame(m[2:end, :], :auto)
@@ -52,6 +65,7 @@ function load_lines(xf)
     )
 end
 
+# Function to load demand data
 function load_demands(xf, T, O)
     m = xf["demand"][:]
     df = DataFrame(m[2:end, :], :auto)
@@ -65,6 +79,7 @@ function load_demands(xf, T, O)
     )
 end
 
+# Function to load economic data
 function load_economic(xf, T, O)
     m = xf["economic"][:]
     df = DataFrame(m[2:end, :], :auto)
@@ -75,6 +90,8 @@ function load_economic(xf, T, O)
     return a, ρ
 end
 
+# ==============================================================================
+# Load Data
 cand = load_cand(xf, T)
 exist = load_exist(xf, T)
 lines = load_lines(xf)
@@ -82,3 +99,5 @@ demands = load_demands(xf, T, O)
 a, ρ = load_economic(xf, T, O)
 
 M = 1e10          # Big number
+
+println("Data imported successfully.")

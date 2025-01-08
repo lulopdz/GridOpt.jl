@@ -36,7 +36,7 @@ G = 1:nG                                # Existing generating units
 D = 1:nD                                # Demands
 L = 1:nL                                # Transmission lines
 N = 1:nN                                # Nodes
-Nr = N[2:end]                           # Nodes without slack node
+Nr = setdiff(N, ref)                    # Nodes without slack node
 O = 1:nO                                # Operating conditions
 Q = 1:nQ                                # Generation capacity blocks
 
@@ -65,7 +65,7 @@ PEmax = exist[:Max_cap]                 # Production capacity of existing genera
 
 # Economic Parameters
 a = a[1]/2                              # Annualization factor [1/h]
-ρ = ρ[1]                                # Weight of operating condition o [h]
+ρ = ρ[end]                              # Weight of operating condition o [h]
 
 # ==============================================================================
 # Model
@@ -177,7 +177,6 @@ for o in O
     println("Demand: ", sum(PD[d][o] for d in D))
 end
 
-
 # ==============================================================================
 # Results
 for o in O
@@ -204,3 +203,72 @@ println("========================================")
 println("Generation Cost: ", value(gen_cost))
 println("Annual Investment: ", value(annual_inv))
 println("Objective Value: ", objective_value(mip))
+
+# ==============================================================================
+# Load shedding penalty (set high to discourage load shedding)
+C_s = 10000  # Penalty cost for shedding load [$/MW]
+
+# Post-Solution Evaluation with Network Constraints and Load Shedding
+results = []
+
+include(pf * "/GridOpt.jl/data/planning/test.jl")
+
+# ==============================================================================
+# Maximum dimensions
+nT = length(demands[:Load][1])
+nO = length(demands[:Load][1][1])
+
+# Sets
+T = 1:nT                                # Time periods
+O = 1:nO                                # Operating conditions
+
+# ==============================================================================
+# Parameters
+PD = demands[:Load]                     # Load of demand d [MW]
+
+for t in T, o in O
+    market = Model(Gurobi.Optimizer)  # Use the appropriate solver
+
+    # Variables
+    @variable(market, 0 <= pE[g in G] <= PEmax[g])  
+    @variable(market, 0 <= pC[c in C] <= value(pCmax[c]))  # Candidate generation (fixed by plan)
+    @variable(market, 0 <= sD[d in D])                        # Load shedding for demand points
+    @variable(market, θ[n in N]) 
+    @variable(market, -F[l] <= pL[l in L] <= F[l]) 
+
+    # Market Clearing Constraint
+    @constraint(market, [n in N],
+        sum(pE[g] for g in Ω_E[n] if g != 0) + sum(pC[c] for c in Ω_C[n] if c != 0) -
+        sum(pL[l] for l in L if s[l] == n) + sum(pL[l] for l in L if r[l] == n) + 
+        sum(sD[d] for d in Ω_D[n] if d != 0)
+        == sum(PD[d][t][o] for d in Ω_D[n] if d != 0)
+    )
+
+    # Transmission Line Flow Constraints
+    @constraint(market, [l in L], pL[l] == B[l] * (θ[r[l]] - θ[s[l]]))
+    @constraint(market, θ[ref] == 0)  # Reference node angle
+
+    # Objective: Minimize Generation Cost + Load Shedding Cost
+    gen_cost = sum(C_E[g] * pE[g] for g in G) + sum(C_C[c] * pC[c] for c in C)
+    shed_cost = sum(C_s * sD[d] for d in D)
+
+    @objective(market, Min, gen_cost + shed_cost)
+
+    # Solve
+    optimize!(market)
+
+    # Store results for this scenario
+    result = Dict(
+        "Time Period" => t,
+        "Operating Condition" => o,
+        "Generation Cost" => objective_value(market),
+        "Total Existing Gen (MW)" => sum(value(pE[g]) for g in G),
+        "Total Candidate Gen (MW)" => sum(value(pC[c]) for c in C),
+        "Total Demand (MW)" => sum(PD[d][t][o] for d in D),
+        "Total Load Shed (MW)" => sum(value(sD[d]) for d in D),
+        "Load Shedding Cost (\$)" => sum(C_s * value(sD[d]) for d in D),
+        "Congestion" => any(abs(value(pL[l])) >= F[l] for l in L) ? "Yes" : "No",
+        "Status" => termination_status(market)
+    )
+    push!(results, result)
+end

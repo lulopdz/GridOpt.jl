@@ -9,8 +9,9 @@ using DataFrames, XLSX
 # ==============================================================================
 # Read Excel File
 pf = pwd()
-ep = joinpath(pf, "GridOpt.jl/data/planning/test118.xlsx")
+ep = joinpath(pf, "GridOpt.jl/data/planning/test0.xlsx")
 xf = XLSX.readxlsx(ep)
+ref = 1                                 # Slack node
 
 # Determine the number of time periods and operating conditions
 T = size(xf["economic"][:])[1] - 1

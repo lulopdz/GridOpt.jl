@@ -19,10 +19,10 @@ include(pf * "/GridOpt.jl/data/planning/test.jl")
 
 # Main function to run the entire process
 function dyn_net()
-    dims = get_dimensions()
+    dims = get_dimensions(cand, exist, lines, demands)
     sets, sets_n = define_sets(dims, cand, exist, lines, demands, ref)
     params = define_parameters(cand, exist, lines, demands)
-    mip = build_model(sets, sets_n, params, ρ, a, M, HiGHS.Optimizer)
+    mip = build_model(sets, sets_n, params, ρ, a, M)
     results = solve_model(mip, params)
 
     return results
@@ -30,7 +30,7 @@ end
 
 # ==============================================================================
 # Maximum dimensions
-function get_dimensions()
+function get_dimensions(cand, exist, lines, demands)
     return Dict(
         :nC => length(cand[:ID]),
         :nG => length(exist[:ID]),
@@ -100,6 +100,7 @@ end
 # Model
 function build_model(sets, sets_n, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
     mip = Model(optimizer_mip)
+    set_silent(mip)
 
     # ==============================================================================
     # Sets and indices
@@ -238,44 +239,4 @@ function build_model(sets, sets_n, params, ρ, a, M, optimizer_mip = Gurobi.Opti
     @objective(mip, Min, gen_cost + annual_inv)
 
     return mip
-end
-
-# ==============================================================================
-# Process results
-function process_results(mip, sets, params, gen_cost, annual_inv)
-    T = sets[:T]
-    O = sets[:O]
-    pC = params[:pC]
-    pE = params[:pE]
-    PD = params[:PD]
-    pCmax = params[:pCmax]
-    
-    for t in T, o in O
-        println("========================================")
-        println("Time period: ", t, " | Operating condition: ", o)
-        println("----------------------------------------")
-        println("Production power (Candidate): ", sum(value.(pC)[:, o, t]))
-        println("Production power (Existing): ", sum(value.(pE)[:, o, t]))
-        println("Total Demand: ", sum(PD[d][t][o] for d in D))
-        println(" ")
-    end
-
-    println("========================================")
-    println("Maximum Production Power (Candidate):")
-    for t in T
-        println("----------------------------------------")
-        println("Time period: ", t)
-        for c in C
-            capacity = value(pCmax[c, t])
-            println("  Candidate: ", c, " | Capacity: ", capacity)
-        end
-    end
-    println("Total Capacity: ", sum(value.(pCmax)))
-    println(" ")
-
-    println("========================================")
-    println("Generation Cost: ", value(gen_cost))
-    println("Annual Investment: ", value(annual_inv))
-    println("Objective Value: ", objective_value(mip))
-    println("Solution time: ", solve_time(mip))
 end

@@ -2,6 +2,8 @@
 # This file contains utility functions for planning problems 
 # in the GridOpt.jl package.
 
+using JuMP, CSV
+
 # ==============================================================================
 # This function maps generators to their respective nodes.
 function map_nodes(gens::Vector{Int}, nodes::Vector{Int}, node_range::UnitRange{Int})
@@ -99,7 +101,7 @@ end
 
 # ==============================================================================
 # Market analysis post-optimization
-function market_post(results, ref, ρ, model_horizon)
+function market_post(results, model_horizon)
     include(pf * "/GridOpt.jl/data/planning/test.jl")
 
     # ==========================================================================
@@ -240,9 +242,9 @@ function market_post(results, ref, ρ, model_horizon)
 
         # Store results for this scenario
         r_market = Dict(
-            "Time Period" => t,
-            "Operating Condition" => o,
-            "Operation Cost (M\$)" => ρ[t][o]/1e6*value(gen_cost),
+            "Time" => t,
+            "Op Condition" => o,
+            "Op Cost (M\$)" => ρ[t][o]/1e6*value(gen_cost),
             "Load Shed Cost (M\$)" => ρ[t][o]/1e6*sum(C_s * value(sD[d]) for d in D),
             "Load Shed (MW)" => sum(value(sD[d]) for d in D),
             "Existing Gen (MW)" => sum(value(pE[g]) for g in G),

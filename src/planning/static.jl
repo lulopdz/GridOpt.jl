@@ -22,9 +22,9 @@ cand, exist, demands = static_format(cand, exist, demands)
 # Main function to run the entire process
 function static()
     dims = get_dimensions(cand, exist, demands)
-    sets = define_sets(dims, cand, exist, demands)
+    sets = define_sets(dims)
     params = define_parameters(cand, exist, demands)
-    mip = build_model(sets, params, ρ[end], a[1]/2, M, HiGHS.Optimizer)
+    mip = build_model(sets, params, ρ[end], a[1]/2, M)
     results = solve_model(mip, params)
 
     return results
@@ -44,7 +44,7 @@ end
 
 # ==============================================================================
 # Sets
-function define_sets(dimensions, cand, exist, demands)
+function define_sets(dimensions)
     nC = dimensions[:nC]
     nG = dimensions[:nG]
     nD = dimensions[:nD]
@@ -79,8 +79,9 @@ end
 # Model
 function build_model(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
     mip = Model(optimizer_mip)
+    set_silent(mip)
 
-    # ==============================================================================
+    # ==========================================================================
     # Sets and indices
     C = sets[:C]
     G = sets[:G]
@@ -96,7 +97,7 @@ function build_model(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
     C_E = params[:C_E]
     PEmax = params[:PEmax]
 
-    # ==============================================================================
+    # ==========================================================================
     # Variables
     @variable(mip, pCmax[c in C])
     @variable(mip, pE[g in G, o in O])
@@ -109,7 +110,7 @@ function build_model(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
     @variable(mip, zMax[c in C, q in Q, o in O])
     
 
-    # ==============================================================================
+    # ==========================================================================
     # Constraints
     @constraint(mip, [c in C], sum(uOpt[c,q]*P_Opt[c][q] for q in Q) == 
                 pCmax[c])
@@ -142,7 +143,7 @@ function build_model(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
     @constraint(mip, [c in C, q in Q, o in O], 0 <= zMax[c,q,o])
     @constraint(mip, [c in C, q in Q, o in O], zMax[c,q,o] <= (1 - uOpt[c,q])*M)
 
-    # ==============================================================================
+    # ==========================================================================
     # Objective
     gen_cost = sum(ρ[o]*(sum(C_E[g]*pE[g,o] for g in G) + 
                     sum(C_C[c]*pC[c,o] for c in C)) for o in O)
@@ -151,66 +152,4 @@ function build_model(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
     @objective(mip, Min, gen_cost + annual_inv)
 
     return mip
-end
-
-# ==============================================================================
-# Solve model
-function solve_model(mip, params)
-    optimize!(mip)
-    if termination_status(mip) == MOI.OPTIMAL
-        println("Optimal solution found.")
-        println("Objective value: ", objective_value(mip))
-        println("Solution time: ", solve_time(mip))
-    elseif termination_status(mip) == MOI.TIME_LIMIT
-        println("Time limit reached.")
-    else
-        println("Solver terminated with status: ", termination_status(mip))
-    end
-
-    results = Dict(
-        :pE => value.(mip[:pE]),
-        :pC => value.(mip[:pC]),
-        :pCmax => value.(mip[:pCmax]), 
-        :PD => params[:PD]
-    )
-    
-    return results
-end
-
-
-# ==============================================================================
-# Process results
-function process_results(mip, sets, params, gen_cost, annual_inv)
-    O = sets[:O]
-    pC = params[:pC]
-    pE = params[:pE]
-    PD = params[:PD]
-    pCmax = params[:pCmax]
-
-    for o in O
-        println("========================================")
-        println("Operating condition: ", o)
-        println("----------------------------------------")
-        println("Production power (Candidate): ", sum(value.(pC[:, o])))
-        println("Production power (Existing): ", sum(value.(pE[:, o])))
-        println("Total Demand: ", sum(PD[d][o] for d in D))
-        println(" ")
-    end
-
-    println("========================================")
-    println("Maximum Production Power (Candidate):")
-    for c in C
-        capacity = value(pCmax[c])
-        println("  Candidate: ", c, " | Capacity: ", capacity)
-    end
-
-    println("Total Capacity: ", sum(value.(pCmax)))
-    println(" ")
-
-    println("========================================")
-    println("Generation Cost: ", value(gen_cost))
-    println("Annual Investment: ", value(annual_inv))
-    println("Objective Value: ", objective_value(mip))
-    println("Solution time: ", solve_time(mip))
-
 end

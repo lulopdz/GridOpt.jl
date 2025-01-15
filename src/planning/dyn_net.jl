@@ -22,7 +22,7 @@ function dyn_net()
     dims = get_dimensions(cand, exist, lines, demands)
     sets, sets_n = define_sets(dims, cand, exist, lines, demands, ref)
     params = define_parameters(cand, exist, lines, demands)
-    mip = build_model(sets, sets_n, params, ρ, a, M, HiGHS.Optimizer)
+    mip = build_model(sets, sets_n, params, ρ, a, M, Gurobi.Optimizer)
     results = solve_model(mip, params)
 
     return results

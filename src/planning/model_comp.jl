@@ -10,19 +10,19 @@ set_plot_defaults()
 # Models
 include("static.jl")
 r_static = static()
-market_post(r_static, "static")
+# market_post(r_static, "static")
 
 include("dyn.jl")
 r_dyn = dyn()
-market_post(r_dyn, "dyn")
+# market_post(r_dyn, "dyn")
 
 include("static_net.jl")
 r_static_net = static_net()
-market_post(r_static_net, "static_net")
+# market_post(r_static_net, "static_net")
 
 include("dyn_net.jl")
 r_dyn_net = dyn_net()
-market_post(r_dyn_net, "dyn_net")
+# market_post(r_dyn_net, "dyn_net")
 
 
 ssn = sum(r_static[:pCmax].data)

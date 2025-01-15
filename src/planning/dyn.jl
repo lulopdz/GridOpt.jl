@@ -23,7 +23,7 @@ function dyn()
     dims = get_dimensions(cand, exist, demands)
     sets = define_sets(dims)
     params = define_parameters(cand, exist, demands)
-    mip = build_model(sets, params, ρ, a, M, HiGHS.Optimizer)
+    mip = build_model(sets, params, ρ, a, M, Gurobi.Optimizer)
     results = solve_model(mip, params)
 
     return results

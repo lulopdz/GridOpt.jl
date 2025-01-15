@@ -1,13 +1,13 @@
 # Model comparinson for the GEP 
 
-using Plots, StatsPlots, LaTeXStrings, Plots.PlotMeasures, KNITRO
+using Plots, StatsPlots, LaTeXStrings, Plots.PlotMeasures, Gurobi
 # ==============================================================================
 pf = pwd()
 include(pf * "/GridOpt.jl/src/planning/utils.jl")
 include(pf * "/GridOpt.jl/src/plot_defaults.jl")
 set_plot_defaults()
 
-solver = KNITRO.Optimizer
+solver = Gurobi.Optimizer
 
 # Models
 include("static.jl")

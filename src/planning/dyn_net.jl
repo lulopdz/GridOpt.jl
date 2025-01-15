@@ -100,7 +100,7 @@ end
 # Model
 function build_model(sets, sets_n, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
     mip = Model(optimizer_mip)
-    set_silent(mip)
+    # set_silent(mip)
 
     # ==============================================================================
     # Sets and indices

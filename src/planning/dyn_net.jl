@@ -18,11 +18,11 @@ pf = pwd()
 include(pf * "/GridOpt.jl/data/planning/test.jl")
 
 # Main function to run the entire process
-function dyn_net()
+function dyn_net(optimizer_mip = Gurobi.Optimizer)
     dims = get_dimensions(cand, exist, lines, demands)
     sets, sets_n = define_sets(dims, cand, exist, lines, demands, ref)
     params = define_parameters(cand, exist, lines, demands)
-    mip = build_model(sets, sets_n, params, ρ, a, M, Gurobi.Optimizer)
+    mip = build_model(sets, sets_n, params, ρ, a, M, optimizer_mip)
     results = solve_model(mip, params)
 
     return results

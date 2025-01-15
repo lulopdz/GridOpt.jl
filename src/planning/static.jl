@@ -20,11 +20,11 @@ include(pf * "/GridOpt.jl/data/planning/test.jl")
 cand, exist, demands = static_format(cand, exist, demands)
 
 # Main function to run the entire process
-function static()
+function static(optimizer_mip = Gurobi.Optimizer)
     dims = get_dimensions(cand, exist, demands)
     sets = define_sets(dims)
     params = define_parameters(cand, exist, demands)
-    mip = build_model(sets, params, ρ[end], a[1]/2, M, Gurobi.Optimizer)
+    mip = build_model(sets, params, ρ[end], a[1]/2, M, optimizer_mip)
     results = solve_model(mip, params)
 
     return results

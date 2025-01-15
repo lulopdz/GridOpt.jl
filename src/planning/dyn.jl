@@ -23,7 +23,7 @@ function dyn()
     dims = get_dimensions(cand, exist, demands)
     sets = define_sets(dims)
     params = define_parameters(cand, exist, demands)
-    mip = build_model(sets, params, ρ, a, M)
+    mip = build_model(sets, params, ρ, a, M, HiGHS.Optimizer)
     results = solve_model(mip, params)
 
     return results
@@ -117,6 +117,8 @@ function build_model(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
     # Constraints
     @constraint(mip, [c in C, t in T], sum(uOpt[c,q,t]*P_Opt[c][t][q] for q in Q) == 
                 pCmax[c,t])
+    @constraint(mip, [c in C, t in T], sum(pCmax[c,τ] for τ in 1:t) <= P_Opt[c][t][end])
+
     @constraint(mip, [c in C, t in T], sum(uOpt[c,q,t] for q in Q) == 1)
 
     @constraint(mip, [o in O, t in T], sum(pE[g,o,t] for g in G) + 

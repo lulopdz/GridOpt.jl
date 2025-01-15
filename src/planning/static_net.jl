@@ -25,7 +25,7 @@ function static_net()
     dims = get_dimensions(cand, exist, lines, demands)
     sets, sets_n = define_sets(dims, cand, exist, lines, demands, ref)
     params = define_parameters(cand, exist, lines, demands)
-    mip = build_model(sets, sets_n, params, ρ[end], a[1]/2, M)
+    mip = build_model(sets, sets_n, params, ρ[end], a[1]/2, M, HiGHS.Optimizer)
     results = solve_model(mip, params)
 
     return results

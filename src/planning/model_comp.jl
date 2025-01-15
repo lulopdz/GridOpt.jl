@@ -1,6 +1,6 @@
 # Model comparinson for the GEP 
 
-using Plots, StatsPlots
+using Plots, StatsPlots, LaTeXStrings, Plots.PlotMeasures
 # ==============================================================================
 pf = pwd()
 include(pf * "/GridOpt.jl/src/planning/utils.jl")
@@ -37,16 +37,25 @@ bar_data = [
     dnc[1] dnc[2]
 ]
 
-areaplot(1:4, bar_data, 
-    label=["t1" "t2"], 
+p1 = Plots.areaplot(1:4, bar_data, 
+    label=[L"$t_1$" L"$t_2$"], 
     xlabel="Model", 
-    ylabel="Value", 
+    ylabel="Installed Capacity [MW]", 
     bar_width=0.7,
     lc=:match,
     st=bar,
     xticks=(1:4, ["S-SN", "D-SN", "S-NC", "D-NC"]),
+    ylims=(0, 10000),
+    color=["#2b8cbe" "#a6bddb"],
+    legend=:topleft,
+    legendcolumns=2,
+    size=(680, 300),
+    leftmargin=5mm,
+    bottommargin=5mm,
+    topmargin=5mm,
 )
 
+save_plot(p1, "GridOpt.jl/results/plots/installed_models")
 
 bar_data = [
     r_static[:pCmax].data[:];
@@ -54,14 +63,22 @@ bar_data = [
     r_static_net[:pCmax].data;
     sum(r_dyn_net[:pCmax].data, dims = 2)
 ]
-group = repeat(["AS-SN", "AD-SN", "BS-NC", "BD-NC"], inner=length(r_static[:pCmax].data[:]))
+group = repeat(["A1S-SN", "A2D-SN", "B1S-NC", "B2D-NC"], inner=length(r_static[:pCmax].data[:]))
 
-groupedbar(bar_data,
+p2 = groupedbar(bar_data,
     group=group,
     xlabel="Candidates", 
-    ylabel="Installed2", 
+    ylabel="Installed Capacity [MW]", 
     label=["S-SN" "D-SN" "S-NC" "D-NC"],
-    lc=:match, 
+    lc=:match,
+    ylims = (0, 1000),
+    legendcolumns=4,
+    size=(680, 350),   
+    margin=5mm,
+    color=["#33a02c" "#b2df8a" "#6a3d9a" "#cab2d6"],
+    # xticks=(1:length(r_static[:pCmax].data[:]))
     # bar_width=0.3,
     # bar_position=:dodge,
 )
+
+save_plot(p2, "GridOpt.jl/results/plots/candidate_comparison")

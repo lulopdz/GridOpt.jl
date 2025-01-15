@@ -21,11 +21,11 @@ include(pf * "/GridOpt.jl/data/planning/test.jl")
 cand, exist, lines, demands = static_net_format(cand, exist, lines, demands)
 
 # Main function to run the entire process
-function static_net()
+function static_net(optimizer_mip = Gurobi.Optimizer)
     dims = get_dimensions(cand, exist, lines, demands)
     sets, sets_n = define_sets(dims, cand, exist, lines, demands, ref)
     params = define_parameters(cand, exist, lines, demands)
-    mip = build_model(sets, sets_n, params, ρ[end], a[1]/2, M, Gurobi.Optimizer)
+    mip = build_model(sets, sets_n, params, ρ[end], a[1]/2, M, optimizer_mip)
     results = solve_model(mip, params)
 
     return results

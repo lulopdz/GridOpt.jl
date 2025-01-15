@@ -1,27 +1,29 @@
 # Model comparinson for the GEP 
 
-using Plots, StatsPlots, LaTeXStrings, Plots.PlotMeasures
+using Plots, StatsPlots, LaTeXStrings, Plots.PlotMeasures, KNITRO
 # ==============================================================================
 pf = pwd()
 include(pf * "/GridOpt.jl/src/planning/utils.jl")
 include(pf * "/GridOpt.jl/src/plot_defaults.jl")
 set_plot_defaults()
 
+solver = KNITRO.Optimizer
+
 # Models
 include("static.jl")
-r_static = static()
+r_static = static(solver)
 # market_post(r_static, "static")
 
 include("dyn.jl")
-r_dyn = dyn()
+r_dyn = dyn(solver)
 # market_post(r_dyn, "dyn")
 
 include("static_net.jl")
-r_static_net = static_net()
+r_static_net = static_net(solver)
 # market_post(r_static_net, "static_net")
 
 include("dyn_net.jl")
-r_dyn_net = dyn_net()
+r_dyn_net = dyn_net(solver)
 # market_post(r_dyn_net, "dyn_net")
 
 

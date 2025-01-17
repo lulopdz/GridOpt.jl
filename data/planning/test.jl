@@ -9,9 +9,9 @@ using DataFrames, XLSX
 # ==============================================================================
 # Read Excel File
 pf = pwd()
-ep = joinpath(pf, "GridOpt.jl/data/planning/test39.xlsx")
+ep = joinpath(pf, "GridOpt.jl/data/planning/test118.xlsx")
 xf = XLSX.readxlsx(ep)
-ref = 31                                # Slack node
+ref = 69                                # Slack node
 
 # Determine the number of time periods and operating conditions
 T = size(xf["economic"][:])[1] - 1
@@ -99,6 +99,6 @@ lines = load_lines(xf)
 demands = load_demands(xf, T, O)
 a, ρ = load_economic(xf, T, O)
 
-M = 1e10          # Big number
+M = 1e15          # Big number
 
 println("Data imported successfully.")

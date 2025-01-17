@@ -12,46 +12,49 @@ solver = Gurobi.Optimizer
 # Models
 include("static.jl")
 r_static = static(solver)
-# market_post(r_static, "static")
 
 include("dyn.jl")
 r_dyn = dyn(solver)
-# market_post(r_dyn, "dyn")
 
 include("static_net.jl")
 r_static_net = static_net(solver)
-# market_post(r_static_net, "static_net")
 
 include("dyn_net.jl")
 r_dyn_net = dyn_net(solver)
-# market_post(r_dyn_net, "dyn_net")
 
+market_post(r_static, "static")
+market_post(r_dyn, "dyn")
+market_post(r_static_net, "static_net")
+market_post(r_dyn_net, "dyn_net")
 
 ssn = sum(r_static[:pCmax].data)
 dsn = sum(r_dyn[:pCmax].data', dims = 2)
 snc = sum(r_static_net[:pCmax].data)
 dnc = sum(r_dyn_net[:pCmax].data', dims = 2)
+T = size(dsn)[1]
 
 bar_data = [
-    ssn NaN;
-    dsn[1] dsn[2];
-    snc NaN;
-    dnc[1] dnc[2]
+    ssn fill(NaN, T-1)...;
+    dsn';
+    snc fill(NaN, T-1)...;
+    dnc'
 ]
 
+blues_color = collect(palette(:Blues, T+5; rev = true))
+
 p1 = Plots.areaplot(1:4, bar_data, 
-    label=[L"$t_1$" L"$t_2$"], 
-    xlabel="Model", 
+    label=["\$t_{$(j)}\$" for i in 1:1, j in 1:T],
+    xlabel="Time", 
     ylabel="Installed Capacity [MW]", 
     bar_width=0.7,
     lc=:match,
     st=bar,
     xticks=(1:4, ["S-SN", "D-SN", "S-NC", "D-NC"]),
-    ylims=(0, 10000),
-    color=["#2b8cbe" "#a6bddb"],
-    legend=:topleft,
-    legendcolumns=2,
-    size=(680, 300),
+    ylims=(0, 3000),
+    color=blues_color',
+    legend=:top,
+    legendcolumns=5,
+    size=(680, 350),
     leftmargin=5mm,
     bottommargin=5mm,
     topmargin=5mm,
@@ -78,7 +81,7 @@ p2 = groupedbar(bar_data,
     size=(680, 350),   
     margin=5mm,
     color=["#33a02c" "#b2df8a" "#6a3d9a" "#cab2d6"],
-    # xticks=(1:length(r_static[:pCmax].data[:]))
+    xticks=(1:3:length(r_static[:pCmax].data[:]))
     # bar_width=0.3,
     # bar_position=:dodge,
 )

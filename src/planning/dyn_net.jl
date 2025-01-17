@@ -9,8 +9,7 @@
 
 # ==============================================================================
 # Packages
-using JuMP, Gurobi, Ipopt, HiGHS
-using Plots, CSV 
+using JuMP, Gurobi
 
 # ==============================================================================
 # Include utility functions and test data for planning

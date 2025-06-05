@@ -17,7 +17,7 @@ include("models.jl")
 # Parse MATPOWER data from file
 mpc = parse_mpc("GridOpt.jl/data/case5_strg.m")
 
-# Scenerio-specific parameters
+# Scenario-specific parameters
 scenarios = [
     (df = 1.3, weight = 3000.0),
     (df = 1.2, weight = 2760.0),

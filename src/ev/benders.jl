@@ -104,7 +104,7 @@ plot(p_plots..., layout = layout,
 savefig("GridOpt.jl/src/ev/plots/pd_profiles.pdf")
 
 
-# Scenerio-specific parameters
+# Scenario-specific parameters
 scenarios = [
     (df = 1.3, weight = w_data[1], ev = ev_profiles[1, :], pd = pd_profiles[1, :]),
     (df = 1.2, weight = w_data[2], ev = ev_profiles[2, :], pd = pd_profiles[2, :]),

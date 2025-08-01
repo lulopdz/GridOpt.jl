@@ -397,7 +397,7 @@ end
 """
     _split_loads_shunts!(data)
 
-Seperates Loads and Shunts in `data` under separate "load" and "shunt" keys in the
+Separates Loads and Shunts in `data` under separate "load" and "shunt" keys in the
 PowerModels data format. Includes references to originating bus via "load_bus"
 and "shunt_bus" keys, respectively.
 """

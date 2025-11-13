@@ -38,7 +38,7 @@ function get_dimensions(cand, exist, demands)
         :nD => length(demands[:ID]),
         :nT => length(demands[:Load][1]),
         :nO => length(demands[:Load][1][1]),
-        :nQ => length(cand[:Prod_cap][1][1])
+        :nQ => length(cand[:Prod_cap][1][1]),
     )
 end
 
@@ -73,7 +73,11 @@ function define_parameters(cand, exist, demands)
         :I_C_A => cand[:Inv_cost],                 # Annualized inv cost of candidate generating unit c [$/MW]
         :P_Opt => cand[:Prod_cap],                 # Production capacity of inv option q of gen unit c [MW]
         :C_E => exist[:Prod_cost],                 # Production cost of existing generating unit g [$/MWh]
-        :PEmax => exist[:Max_cap]                  # Production capacity of existing generating unit g [MW]
+        :PEmax => exist[:Max_cap],                  # Production capacity of existing generating unit g [MW]
+        :EM_C => cand[:Emissions],                   # [kg CO2 per MWh] or similar
+        :HR_C => cand[:Heat_rate],                   # [MBtu/MWh] optional
+        :EM_E => exist[:Emissions],                   # [kg CO2 per MWh] or similar
+        :HR_E => exist[:Heat_rate],                   # [MBtu/MWh] optional
     )
 end
 
@@ -96,6 +100,8 @@ function build_model(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
     P_Opt = params[:P_Opt]
     C_E = params[:C_E]
     PEmax = params[:PEmax]
+    EM_C = params[:EM_C]
+    EM_E = params[:EM_E]
 
     # ==========================================================================
     # Variables
@@ -113,6 +119,11 @@ function build_model(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
 
     @variable(mip, zAux[c in C, q in Q, o in O, t in T])
     @variable(mip, zMax[c in C, q in Q, o in O, t in T])
+
+    # Emissions 
+    @variable(mip, em_c[c in C, o in O, t in T])
+    @variable(mip, em_e[g in G, o in O, t in T])
+    @variable(mip, em[o in O, t in T])
 
     # ==========================================================================
     # Constraints
@@ -155,6 +166,12 @@ function build_model(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
     @constraint(mip, [c in C, q in Q, o in O, t in T], 
                 zMax[c,q,o,t] <= (1 - uOpt[c,q,t])*M)
 
+    @constraint(mip, [c in C, o in O, t in T], em_c[c,o,t] == EM_C[c]*pC[c,o,t])
+    @constraint(mip, [g in G, o in O, t in T], em_e[g,o,t] == EM_E[g]*pE[g,o,t])
+
+    @constraint(mip, [o in O, t in T], em[o,t] == sum(em_e[g,o,t] for g in G) 
+                + sum(em_c[c,o,t] for c in C))
+    @constraint(mip, [o in O], em[o, last(T)] == 0)
 
     # ==========================================================================
     # Objective
@@ -163,7 +180,11 @@ function build_model(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
 
     annual_inv = sum(a[t]*sum(I_C_A[c][t]*pCmax[c,t] for c in C) for t in T)
 
-    @objective(mip, Min, gen_cost + annual_inv)
+    carbon_cost = sum(ρ[t][o] * c_tax[t] * em[o,t] for o in O, t in T)
+
+    obj = gen_cost + annual_inv + carbon_cost
+
+    @objective(mip, Min, obj)
 
     return mip 
 end

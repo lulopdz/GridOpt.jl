@@ -11,11 +11,12 @@ using DataFrames, XLSX
 pf = pwd()
 ep = joinpath(pf, "GridOpt.jl/data/planning/EMH_network.xlsx")
 xf = XLSX.readxlsx(ep)
+# ref = 116                                # Slack node
 ref = 515                                # Slack node
 
 # Determine the number of time periods and operating conditions
 T = size(xf["economic"][:])[1] - 1
-O = size(xf["economic"][:])[2] - 2
+O = size(xf["economic"][:])[2] - 3
 
 # ==============================================================================
 # Functions to Load Data
@@ -33,7 +34,9 @@ function load_cand(xf, T)
         :Node       => Vector{Int64}(df.Node),
         :Prod_cost  => [[prod_cost[t][c] for t in 1:T] for c in 1:C],
         :Inv_cost   => [[inv_cost[t][c] for t in 1:T] for c in 1:C],
-        :Prod_cap   => [[vcat(0.0, range(0.0, step=cap/(q-1), length=q)[2:end]) for _ in 1:T] for (cap, q) in zip(df.Prod_cap, df.Q)]
+        :Prod_cap   => [[vcat(0.0, range(0.0, step=cap/(q-1), length=q)[2:end]) for _ in 1:T] for (cap, q) in zip(df.Prod_cap, df.Q)],
+        :Emissions  => Vector{Float64}(df.emissions),
+        :Heat_rate  => Vector{Float64}(df.heat_rate),
     )
 end
 
@@ -48,7 +51,9 @@ function load_exist(xf, T)
         :ID        => Vector{Int64}(df.ID),
         :Node      => Vector{Int64}(df.Node),
         :Max_cap   => Vector{Float64}(df.Max_cap),
-        :Prod_cost => [[prod_cost[t][g] for t in 1:T] for g in 1:G]
+        :Prod_cost => [[prod_cost[t][g] for t in 1:T] for g in 1:G],
+        :Emissions => Vector{Float64}(df.emissions),
+        :Heat_rate => Vector{Float64}(df.heat_rate),
     )
 end
 
@@ -88,7 +93,8 @@ function load_economic(xf, T, O)
     rho = [Vector{Float64}(df[:, Symbol("rho_o$i")]) for i in 1:O]
     a = Vector{Float64}(df.a)
     ρ = [[rho[o][t] for o in 1:O] for t in 1:T]
-    return a, ρ
+    c_tax = Vector{Float64}(df.carbon_tax)
+    return a, ρ, c_tax
 end
 
 # ==============================================================================
@@ -97,7 +103,7 @@ cand = load_cand(xf, T)
 exist = load_exist(xf, T)
 lines = load_lines(xf)
 demands = load_demands(xf, T, O)
-a, ρ = load_economic(xf, T, O)
+a, ρ, c_tax = load_economic(xf, T, O)
 
 M = 1e15          # Big number
 

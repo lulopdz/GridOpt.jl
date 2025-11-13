@@ -49,14 +49,18 @@ function dynamic_format(cand, exist, demands)
         :ID => cand[:ID],
         :Prod_cost => cand[:Prod_cost],
         :Inv_cost => cand[:Inv_cost],
-        :Prod_cap => cand[:Prod_cap]
+        :Prod_cap => cand[:Prod_cap], 
+        :Emissions => cand[:Emissions],
+        :Heat_rate => cand[:Heat_rate]
     )
 
     # Transform existing generators data
     new_exist = Dict(
         :ID => exist[:ID],
         :Max_cap => exist[:Max_cap],
-        :Prod_cost => exist[:Prod_cost]
+        :Prod_cost => exist[:Prod_cost],
+        :Emissions => exist[:Emissions],
+        :Heat_rate => exist[:Heat_rate]
     )
 
     # Transform demand data
@@ -284,7 +288,8 @@ function solve_model(mip, params)
         :pE => value.(mip[:pE]),
         :pC => value.(mip[:pC]),
         :pCmax => value.(mip[:pCmax]), 
-        :PD => params[:PD]
+        :PD => params[:PD],
+        :em => value.(mip[:em])
     )
     
     return results

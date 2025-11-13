@@ -108,7 +108,8 @@ function build_model(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
 
     @variable(mip, λ[o in O, t in T])
 
-    @variable(mip, uOpt[c in C, q in Q, t in T], Bin)
+    # @variable(mip, uOpt[c in C, q in Q, t in T], Bin)
+    @variable(mip, 0 <= uOpt[c in C, q in Q, t in T] <= 1)
 
     @variable(mip, zAux[c in C, q in Q, o in O, t in T])
     @variable(mip, zMax[c in C, q in Q, o in O, t in T])

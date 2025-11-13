@@ -84,8 +84,8 @@ end
 # Parameters
 function define_parameters(cand, exist, lines, demands)
     return Dict(
-        :B => lines[:Susceptance],                 # Susceptance of transmission line [S]
-        :F => lines[:Capacity],                    # Capacity of transmission line [MW]
+        :B => 5*lines[:Susceptance],                 # Susceptance of transmission line [S]
+        :F => 5*lines[:Capacity],                    # Capacity of transmission line [MW]
         :PD => demands[:Load],                     # Load of demand d [MW]
         :C_C => cand[:Prod_cost],                  # Production cost of candidate generating unit c [$/MWh]
         :I_C_A => cand[:Inv_cost],                 # Annualized inv cost of candidate generating unit c [$/MW]
@@ -136,7 +136,9 @@ function build_model(sets, sets_n, params, ρ, a, M, optimizer_mip = Gurobi.Opti
     @variable(mip, pCmax[c in C, t in T])
     @variable(mip, pE[g in G, o in O, t in T])
     @variable(mip, pC[c in C, o in O, t in T])
-    @variable(mip, uOpt[c in C, q in Q, t in T], Bin)
+    # @variable(mip, uOpt[c in C, q in Q, t in T], Bin)
+    # Changing binary to continuous variables for Gurobi
+    @variable(mip, 0 <= uOpt[c in C, q in Q, t in T] <= 1)
 
     @variable(mip, μEmax[g in G, o in O, t in T])
     @variable(mip, μCmax[c in C, o in O, t in T])

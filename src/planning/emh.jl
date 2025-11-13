@@ -1,0 +1,21 @@
+# Model comparinson for the GEP 
+
+using Plots, StatsPlots, LaTeXStrings, Plots.PlotMeasures, Gurobi
+# ==============================================================================
+pf = pwd()
+include(pf * "/GridOpt.jl/src/planning/utils.jl")
+include(pf * "/GridOpt.jl/src/plot_defaults.jl")
+set_plot_defaults()
+
+solver = Gurobi.Optimizer
+
+# Models
+include("dyn.jl")
+results = dyn(solver)
+
+CSV.write("GridOpt.jl/src/new_capacity.csv", DataFrame(results[:pCmax].data, :auto))
+
+for t in 1:6
+    CSV.write("GridOpt.jl/src/new_gen_dispatch_t$t.csv", DataFrame(results[:pC][:,:,t].data, :auto))
+    CSV.write("GridOpt.jl/src/exist_gen_dispatch_t$t.csv", DataFrame(results[:pE][:,:,t].data, :auto))
+end

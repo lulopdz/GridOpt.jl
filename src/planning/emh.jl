@@ -14,9 +14,9 @@ include("dyn.jl")
 results = dyn(solver)
 
 CSV.write("GridOpt.jl/src/new_capacity.csv", DataFrame(results[:pCmax].data, :auto))
-CSV.write("GridOpt.jl/src/emissions.csv", DataFrame(results[:em].data, :auto))
 
 for t in 1:6
+    CSV.write("GridOpt.jl/src/emissions_t$t.csv", DataFrame(results[:em][:,:,t].data, :auto))
     CSV.write("GridOpt.jl/src/new_gen_dispatch_t$t.csv", DataFrame(results[:pC][:,:,t].data, :auto))
     CSV.write("GridOpt.jl/src/exist_gen_dispatch_t$t.csv", DataFrame(results[:pE][:,:,t].data, :auto))
 end

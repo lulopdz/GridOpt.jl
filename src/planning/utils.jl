@@ -289,7 +289,7 @@ function solve_model(mip, params)
         :pC => value.(mip[:pC]),
         :pCmax => value.(mip[:pCmax]), 
         :PD => params[:PD],
-        :em => value.(mip[:em])
+        :em => value.(mip[:em_e])
     )
     
     return results

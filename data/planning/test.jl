@@ -37,6 +37,7 @@ function load_cand(xf, T)
         :Prod_cap   => [[vcat(0.0, range(0.0, step=cap/(q-1), length=q)[2:end]) for _ in 1:T] for (cap, q) in zip(df.Prod_cap, df.Q)],
         :Emissions  => Vector{Float64}(df.emissions),
         :Heat_rate  => Vector{Float64}(df.heat_rate),
+        :Fixed_cost => Vector{Float64}(df.fixed_om_costs),
     )
 end
 
@@ -54,6 +55,7 @@ function load_exist(xf, T)
         :Prod_cost => [[prod_cost[t][g] for t in 1:T] for g in 1:G],
         :Emissions => Vector{Float64}(df.emissions),
         :Heat_rate => Vector{Float64}(df.heat_rate),
+        :Fixed_cost => Vector{Float64}(df.fixed_om_costs),
     )
 end
 

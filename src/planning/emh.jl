@@ -13,10 +13,21 @@ solver = Gurobi.Optimizer
 include("dyn.jl")
 results = dyn(solver)
 
-CSV.write("GridOpt.jl/src/new_capacity.csv", DataFrame(results[:pCmax].data, :auto))
+CSV.write("GridOpt.jl/results/emh/new_capacity.csv", DataFrame(results[:pCmax].data, :auto))
 
 for t in 1:6
-    CSV.write("GridOpt.jl/src/emissions_t$t.csv", DataFrame(results[:em][:,:,t].data, :auto))
-    CSV.write("GridOpt.jl/src/new_gen_dispatch_t$t.csv", DataFrame(results[:pC][:,:,t].data, :auto))
-    CSV.write("GridOpt.jl/src/exist_gen_dispatch_t$t.csv", DataFrame(results[:pE][:,:,t].data, :auto))
+    CSV.write("GridOpt.jl/results/emh/emissions_t$t.csv", DataFrame(results[:em][:,:,t].data, :auto))
+    CSV.write("GridOpt.jl/results/emh/new_gen_dispatch_t$t.csv", DataFrame(results[:pC][:,:,t].data, :auto))
+    CSV.write("GridOpt.jl/results/emh/exist_gen_dispatch_t$t.csv", DataFrame(results[:pE][:,:,t].data, :auto))
 end
+
+# ==============================================================================
+total_cap = sum(results[:pCmax].data, dims=1)
+total_exist = sum(exist[:Max_cap], dims=1)
+
+cum_cap = cumsum(total_cap, dims=2) .+ total_exist'
+cum_cap = cum_cap*100/1000  # Convert to GW
+
+plot(cum_cap', xlabel="Time Periods", ylabel="Total Capacity (GW)", legend=false,
+    title="Cumulative Installed Capacity Over Time",
+    size=(600,400))

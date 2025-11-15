@@ -52,7 +52,8 @@ function dynamic_format(cand, exist, demands)
         :Prod_cap => cand[:Prod_cap], 
         :Emissions => cand[:Emissions],
         :Heat_rate => cand[:Heat_rate],
-        :Fixed_cost => cand[:Fixed_cost]
+        :Fixed_cost => cand[:Fixed_cost],
+        :CF => cand[:CF]
     )
 
     # Transform existing generators data
@@ -62,7 +63,9 @@ function dynamic_format(cand, exist, demands)
         :Prod_cost => exist[:Prod_cost],
         :Emissions => exist[:Emissions],
         :Heat_rate => exist[:Heat_rate],
-        :Fixed_cost => exist[:Fixed_cost]
+        :Fixed_cost => exist[:Fixed_cost],
+        :CF => exist[:CF],
+        :Pmin => exist[:Pmin]
     )
 
     # Transform demand data

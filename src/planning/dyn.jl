@@ -80,6 +80,9 @@ function define_parameters(cand, exist, demands)
         :F_C => cand[:Fixed_cost],                 # Fixed O&M cost of candidate generating unit c [$/MW]
         :HR_E => exist[:Heat_rate],                # [MBtu/MWh] optional
         :HR_C => cand[:Heat_rate],                 # [MBtu/MWh] optional
+        :CF_E => exist[:CF],                        # Capacity factor of existing generating unit g
+        :CF_C => cand[:CF],                         # Capacity factor of candidate generating unit c
+        :Pmin_E => exist[:Pmin]
     )
 end
 
@@ -102,12 +105,14 @@ function build_model(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
     P_Opt = params[:P_Opt]
     C_E = params[:C_E]
     PEmax = params[:PEmax]
+
     EM_C = params[:EM_C]
     EM_E = params[:EM_E]
     F_E = params[:F_E]
     F_C = params[:F_C]
-    HR_C = params[:HR_C]
-    HR_E = params[:HR_E]
+    CF_E = params[:CF_E]
+    CF_C = params[:CF_C]
+    Pmin_E = params[:Pmin_E]
 
     # ==========================================================================
     # Variables
@@ -142,7 +147,7 @@ function build_model(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
     @constraint(mip, [o in O, t in T], sum(pE[g,o,t] for g in G) + 
                 sum(pC[c,o,t] for c in C) == sum(PD[d][t][o] for d in D))
 
-    @constraint(mip, [g in G, o in O, t in T], 0 <= pE[g,o,t] <= PEmax[g])
+    @constraint(mip, [g in G, o in O, t in T], Pmin_E[g]*PEmax[g] <= pE[g,o,t] <= CF_E[g][t][o]*PEmax[g])
 
     @constraint(mip, [c in C, o in O, t in T], 0 <= pC[c,o,t])
     @constraint(mip, [c in C, o in O, t in T], pC[c,o,t] <= 
@@ -187,10 +192,11 @@ function build_model(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
 
     annual_inv = sum(a[t]*sum(I_C_A[c][t]*pCmax[c,t] for c in C) for t in T) # Change to analyze 
 
-    # carbon_cost = sum(ρ[t][o] * c_tax[t] * em[o,t] for o in O, t in T)
+    # carbon_cost = sum(c_tax[t] * ρ[t][o] * em[o,t] for o in O, t in T)
     carbon_cost = 0.0
+
     fixed_cost = sum(a[t]*sum(F_E[g]*PEmax[g] for g in G) for t in T) + 
-                 sum(a[t]*sum(F_C[c]*pCmax[c,t] for c in C) for t in T)
+                 sum(a[t]*sum(F_C[c]*sum(pCmax[c,τ] for τ in 1:t) for c in C) for t in T)
 
     obj = gen_cost + annual_inv + carbon_cost + fixed_cost
 

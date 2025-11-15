@@ -28,6 +28,7 @@ function load_cand(xf, T)
     rename!(df, Symbol.(m[1, :]))
     prod_cost = [Vector{Float64}(df[:, Symbol("Prod_cost_t$i")]) for i in 1:T] 
     inv_cost = [Vector{Float64}(df[:, Symbol("Inv_cost_t$i")]) for i in 1:T]
+    CF = [[Vector{Float64}(df[:, Symbol("CF_t$j"*"_o$i")]) for i in 1:O] for j in 1:T]
     C = length(df.ID)
     return Dict(
         :ID         => Vector{Int64}(df.ID),
@@ -38,6 +39,7 @@ function load_cand(xf, T)
         :Emissions  => Vector{Float64}(df.emissions),
         :Heat_rate  => Vector{Float64}(df.heat_rate),
         :Fixed_cost => Vector{Float64}(df.fixed_om_costs),
+        :CF        => [[[CF[t][o][c] for o in 1:O] for t in 1:T] for c in 1:C]
     )
 end
 
@@ -46,7 +48,8 @@ function load_exist(xf, T)
     m = xf["exist"][:]
     df = DataFrame(m[2:end, :], :auto)
     rename!(df, Symbol.(m[1, :]))
-    prod_cost = [Vector{Float64}(df[:, Symbol("Prod_cost_t$i")]) for i in 1:T] 
+    prod_cost = [Vector{Float64}(df[:, Symbol("Prod_cost_t$i")]) for i in 1:T]
+    CF = [[Vector{Float64}(df[:, Symbol("CF_t$j"*"_o$i")]) for i in 1:O] for j in 1:T]
     G = length(df.ID)
     return Dict(
         :ID        => Vector{Int64}(df.ID),
@@ -55,7 +58,9 @@ function load_exist(xf, T)
         :Prod_cost => [[prod_cost[t][g] for t in 1:T] for g in 1:G],
         :Emissions => Vector{Float64}(df.emissions),
         :Heat_rate => Vector{Float64}(df.heat_rate),
+        :Pmin      => Vector{Float64}(df.Pmin),
         :Fixed_cost => Vector{Float64}(df.fixed_om_costs),
+        :CF        => [[[CF[t][o][g] for o in 1:O] for t in 1:T] for g in 1:G],
     )
 end
 

@@ -84,14 +84,23 @@ end
 # Parameters
 function define_parameters(cand, exist, lines, demands)
     return Dict(
-        :B => 5*lines[:Susceptance],                 # Susceptance of transmission line [S]
-        :F => 5*lines[:Capacity],                    # Capacity of transmission line [MW]
+        :B => 10*lines[:Susceptance],                 # Susceptance of transmission line [S]
+        :F => 100*lines[:Capacity],                    # Capacity of transmission line [MW]
         :PD => demands[:Load],                     # Load of demand d [MW]
         :C_C => cand[:Prod_cost],                  # Production cost of candidate generating unit c [$/MWh]
         :I_C_A => cand[:Inv_cost],                 # Annualized inv cost of candidate generating unit c [$/MW]
         :P_Opt => cand[:Prod_cap],                 # Production capacity of inv option q of gen unit c [MW]
         :C_E => exist[:Prod_cost],                 # Production cost of existing generating unit g [$/MWh]
-        :PEmax => exist[:Max_cap]                  # Production capacity of existing generating unit g [MW]
+        :PEmax => exist[:Max_cap],                  # Production capacity of existing generating unit g [MW]
+        :EM_C => cand[:Emissions],                 # [kg CO2 per MWh] or similar
+        :EM_E => exist[:Emissions],                # [kg CO2 per MWh] or similar
+        :F_E => exist[:Fixed_cost],                # Fixed O&M cost of existing generating unit g [$/MW]
+        :F_C => cand[:Fixed_cost],                 # Fixed O&M cost of candidate generating unit c [$/MW]
+        :HR_E => exist[:Heat_rate],                # [MBtu/MWh] optional
+        :HR_C => cand[:Heat_rate],                 # [MBtu/MWh] optional
+        :CF_E => exist[:CF],                        # Capacity factor of existing generating unit g
+        :CF_C => cand[:CF],                         # Capacity factor of candidate generating unit c
+        :Pmin_E => exist[:Pmin]
     )
 end
 
@@ -131,6 +140,15 @@ function build_model(sets, sets_n, params, ρ, a, M, optimizer_mip = Gurobi.Opti
     C_E = params[:C_E]
     PEmax = params[:PEmax]
 
+    EM_C = params[:EM_C]
+    EM_E = params[:EM_E]
+    F_E = params[:F_E]
+    F_C = params[:F_C]
+    CF_E = params[:CF_E]
+    CF_C = params[:CF_C]
+    Pmin_E = params[:Pmin_E]
+
+
     # ==============================================================================
     # Variables
     @variable(mip, pCmax[c in C, t in T])
@@ -157,6 +175,11 @@ function build_model(sets, sets_n, params, ρ, a, M, optimizer_mip = Gurobi.Opti
     @variable(mip, μAmin[n in Nr, o in O, t in T])
     @variable(mip, μAref[n in ref, o in O, t in T])
 
+    # Emissions 
+    @variable(mip, em_c[c in C, o in O, t in T])
+    @variable(mip, em_e[g in G, o in O, t in T])
+    @variable(mip, em[o in O, t in T])
+
     # ==============================================================================
     # Constraints
     @constraint(mip, [c in C, t in T], sum(uOpt[c,q,t]*P_Opt[c][t][q] for q in Q) == 
@@ -175,12 +198,12 @@ function build_model(sets, sets_n, params, ρ, a, M, optimizer_mip = Gurobi.Opti
                 pL[l,o,t] == B[l]*(θ[r[l],o,t] - θ[s[l],o,t])
     )
     @constraint(mip, [l in L, o in O, t in T], -F[l] <= pL[l,o,t] <= F[l])
-    @constraint(mip, [g in G, o in O, t in T], 0 <= pE[g,o,t] <= PEmax[g])
+    @constraint(mip, [g in G, o in O, t in T], Pmin_E[g]*PEmax[g] <= pE[g,o,t] <= 1*PEmax[g])
     @constraint(mip, [c in C, o in O, t in T], 0 <= pC[c,o,t])
     @constraint(mip, [c in C, o in O, t in T], pC[c,o,t] <= 
                 sum(pCmax[c,τ] for τ in 1:t)
     )
-    @constraint(mip, [n in N, o in O, t in T], -pi <= θ[n,o,t] <= pi)
+    @constraint(mip, [n in N, o in O, t in T], -2*pi <= θ[n,o,t] <= 2*pi)
     @constraint(mip, [n in ref, o in O, t in T], θ[n,o,t] == 0)
     @constraint(mip, [g in G, o in O, t in T], C_E[g][t] - 
                 λ[ng[g],o,t] + μEmax[g,o,t] >= 0
@@ -232,13 +255,29 @@ function build_model(sets, sets_n, params, ρ, a, M, optimizer_mip = Gurobi.Opti
                 zMax[c,q,o,t] <= (1 - uOpt[c,q,t])*M
     )
 
+    # Emissions constraints
+    @constraint(mip, [c in C, o in O, t in T], em_c[c,o,t] == EM_C[c]*pC[c,o,t])
+    @constraint(mip, [g in G, o in O, t in T], em_e[g,o,t] == EM_E[g]*pE[g,o,t])
+
+    @constraint(mip, [o in O, t in T], em[o,t] == sum(em_e[g,o,t] for g in G) 
+                + sum(em_c[c,o,t] for c in C))
+    @constraint(mip, [o in O], em[o, last(T)] <= 0)
+
     # ==============================================================================
     # Objective
     gen_cost = sum(sum(ρ[t][o]*(sum(C_E[g][t]*pE[g,o,t] for g in G) + 
-    sum(C_C[c][t]*pC[c,o,t] for c in C)) for o in O) for t in T)
+                    sum(C_C[c][t]*pC[c,o,t] for c in C)) for o in O) for t in T)
 
-    annual_inv = sum(a[t]*sum(I_C_A[c][t]*pCmax[c,t] for c in C) for t in T)
-    @objective(mip, Min, gen_cost + annual_inv)
+    annual_inv = sum(a[t]*sum(I_C_A[c][t]*pCmax[c,t] for c in C) for t in T) # Change to analyze 
+
+    # carbon_cost = sum(c_tax[t] * ρ[t][o] * em[o,t] for o in O, t in T)
+    carbon_cost = 0.0
+    fixed_cost = sum(a[t]*sum(F_E[g]*PEmax[g] for g in G) for t in T) + 
+                 sum(a[t]*sum(F_C[c]*pCmax[c,t] for c in C) for t in T)
+
+    obj = gen_cost + annual_inv + carbon_cost + fixed_cost
+
+    @objective(mip, Min, obj)
 
     return mip
 end

@@ -4,7 +4,7 @@ using DataFrames, XLSX, CSV
 # Load CAND table (candidate generators)
 # ==============================================================================
 pf = pwd()
-ep = joinpath(pf, "GridOpt.jl/data/planning/EMH_network.xlsx")
+ep = joinpath(pf, "GridOpt.jl/data/planning/EMH_ref.xlsx")
 xf = XLSX.readxlsx(ep)
 
 # Load candidates
@@ -20,9 +20,6 @@ rename!(exist, Symbol.(m2[1, :]))
 # Load New generation capacity results
 res_path = joinpath(pf, "GridOpt.jl/results/emh/")
 new_cap = CSV.read(res_path * "new_capacity.csv", DataFrame)
-Sbase = 100 # MVA base
-new_cap .= new_cap .* Sbase  # Convert to MW
-exist[:, :Max_cap] .= exist[:, :Max_cap] .* Sbase  # Convert to MW
 
 # Time periods
 years = [2025, 2030, 2035, 2040, 2045, 2050]

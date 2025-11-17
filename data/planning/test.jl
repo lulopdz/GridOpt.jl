@@ -8,8 +8,6 @@ using DataFrames, XLSX
 
 # ==============================================================================
 # Read Excel File
-pf = pwd()
-ep = joinpath(pf, "GridOpt.jl/data/planning/EMH_network.xlsx")
 xf = XLSX.readxlsx(ep)
 # ref = 116                                # Slack node
 ref = 515                                # Slack node
@@ -39,7 +37,8 @@ function load_cand(xf, T)
         :Emissions  => Vector{Float64}(df.emissions),
         :Heat_rate  => Vector{Float64}(df.heat_rate),
         :Fixed_cost => Vector{Float64}(df.fixed_om_costs),
-        :CF        => [[[CF[t][o][c] for o in 1:O] for t in 1:T] for c in 1:C]
+        :CF        => [[[CF[t][o][c] for o in 1:O] for t in 1:T] for c in 1:C],
+        :tech_type  => Vector{String}(df.gen_type)
     )
 end
 
@@ -61,6 +60,7 @@ function load_exist(xf, T)
         :Pmin      => Vector{Float64}(df.Pmin),
         :Fixed_cost => Vector{Float64}(df.fixed_om_costs),
         :CF        => [[[CF[t][o][g] for o in 1:O] for t in 1:T] for g in 1:G],
+        :tech_type  => Vector{String}(df.gen_type)
     )
 end
 

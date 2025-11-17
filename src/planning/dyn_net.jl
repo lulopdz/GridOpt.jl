@@ -84,8 +84,8 @@ end
 # Parameters
 function define_parameters(cand, exist, lines, demands)
     return Dict(
-        :B => 10*lines[:Susceptance],                 # Susceptance of transmission line [S]
-        :F => 100*lines[:Capacity],                    # Capacity of transmission line [MW]
+        :B => 2*lines[:Susceptance],                 # Susceptance of transmission line [S]
+        :F => 5*lines[:Capacity],                    # Capacity of transmission line [MW]
         :PD => demands[:Load],                     # Load of demand d [MW]
         :C_C => cand[:Prod_cost],                  # Production cost of candidate generating unit c [$/MWh]
         :I_C_A => cand[:Inv_cost],                 # Annualized inv cost of candidate generating unit c [$/MW]
@@ -186,7 +186,7 @@ function build_model(sets, sets_n, params, ρ, a, M, optimizer_mip = Gurobi.Opti
                 pCmax[c,t]
     )
     @constraint(mip, [c in C, t in T], sum(pCmax[c,τ] for τ in 1:t) <= P_Opt[c][t][end])
-    @constraint(mip, [c in C, t in T], sum(uOpt[c,q,t] for q in Q) == 1)
+    @constraint(mip, [c in C, t in T], sum(uOpt[c,q,t] for q in Q) <= 1)
     @constraint(mip, [n in N, o in O, t in T], 
                 sum(pE[g,o,t] for g in Ω_E[n] if g!=0) + 
                 sum(pC[c,o,t] for c in Ω_C[n] if c!=0) - 
@@ -198,10 +198,10 @@ function build_model(sets, sets_n, params, ρ, a, M, optimizer_mip = Gurobi.Opti
                 pL[l,o,t] == B[l]*(θ[r[l],o,t] - θ[s[l],o,t])
     )
     @constraint(mip, [l in L, o in O, t in T], -F[l] <= pL[l,o,t] <= F[l])
-    @constraint(mip, [g in G, o in O, t in T], Pmin_E[g]*PEmax[g] <= pE[g,o,t] <= 1*PEmax[g])
+    @constraint(mip, [g in G, o in O, t in T], Pmin_E[g]*PEmax[g] <= pE[g,o,t] <= CF_E[g][t][o]*PEmax[g])
     @constraint(mip, [c in C, o in O, t in T], 0 <= pC[c,o,t])
     @constraint(mip, [c in C, o in O, t in T], pC[c,o,t] <= 
-                sum(pCmax[c,τ] for τ in 1:t)
+                sum(pCmax[c,τ] for τ in 1:t)*CF_C[c][t][o]
     )
     @constraint(mip, [n in N, o in O, t in T], -2*pi <= θ[n,o,t] <= 2*pi)
     @constraint(mip, [n in ref, o in O, t in T], θ[n,o,t] == 0)
@@ -278,6 +278,8 @@ function build_model(sets, sets_n, params, ρ, a, M, optimizer_mip = Gurobi.Opti
     obj = gen_cost + annual_inv + carbon_cost + fixed_cost
 
     @objective(mip, Min, obj)
+
+    write_to_file(mip, "GridOpt.jl/scenarios/gull_island.mps")
 
     return mip
 end

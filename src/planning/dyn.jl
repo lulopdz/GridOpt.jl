@@ -16,6 +16,8 @@ pf = pwd()
 include(pf * "/GridOpt.jl/src/planning/utils.jl")
 include(pf * "/GridOpt.jl/data/planning/test.jl")
 
+Sb = 1.0  # MVA base power
+
 cand, exist, demands = dynamic_format(cand, exist, demands)
 
 # Main function to run the entire process
@@ -68,21 +70,21 @@ end
 # Parameters
 function define_parameters(cand, exist, demands)
     return Dict(
-        :PD => demands[:Load],                     # Load of demand d [MW]
-        :C_C => cand[:Prod_cost],                  # Production cost of candidate generating unit c [$/MWh]
-        :I_C_A => cand[:Inv_cost],                 # Annualized inv cost of candidate generating unit c [$/MW]
-        :P_Opt => cand[:Prod_cap],                 # Production capacity of inv option q of gen unit c [MW]
-        :C_E => exist[:Prod_cost],                 # Production cost of existing generating unit g [$/MWh]
-        :PEmax => exist[:Max_cap],                 # Production capacity of existing generating unit g [MW]
-        :EM_C => cand[:Emissions],                 # [kg CO2 per MWh] or similar
-        :EM_E => exist[:Emissions],                # [kg CO2 per MWh] or similar
-        :F_E => exist[:Fixed_cost],                # Fixed O&M cost of existing generating unit g [$/MW]
-        :F_C => cand[:Fixed_cost],                 # Fixed O&M cost of candidate generating unit c [$/MW]
+        :PD => demands[:Load],                     # Load of demand d [p.u.]
+        :I_C_A => cand[:Inv_cost]/1e3,                 # Annualized inv cost of candidate generating unit c [k$/MW]
+        :C_E => exist[:Prod_cost]/1e3,                 # Production cost of existing generating unit g [k$/MWh]
+        :F_E => exist[:Fixed_cost]/1e3,                # Fixed O&M cost of existing generating unit g [k$/MW]
+        :C_C => cand[:Prod_cost]/1e3,                  # Production cost of candidate generating unit c [k$/MWh]
+        :F_C => cand[:Fixed_cost]/1e3,                 # Fixed O&M cost of candidate generating unit c [k$/MW]
+        :P_Opt => cand[:Prod_cap],                 # Production capacity of inv option q of gen unit c [p.u.]
+        :PEmax => exist[:Max_cap],                 # Production capacity of existing generating unit g [p.u.]
+        :EM_C => cand[:Emissions],                 # [tonCO2 per MWh]
+        :EM_E => exist[:Emissions],                # [tonCO2 per MWh]
         :HR_E => exist[:Heat_rate],                # [MBtu/MWh] optional
         :HR_C => cand[:Heat_rate],                 # [MBtu/MWh] optional
-        :CF_E => exist[:CF],                        # Capacity factor of existing generating unit g
-        :CF_C => cand[:CF],                         # Capacity factor of candidate generating unit c
-        :Pmin_E => exist[:Pmin]
+        :CF_E => exist[:CF],                       # Capacity factor of existing generating unit g
+        :CF_C => cand[:CF],                        # Capacity factor of candidate generating unit c
+        :Pmin_E => exist[:Pmin]                    # Minimum generation of existing generating unit g [p.u.]
     )
 end
 
@@ -90,7 +92,7 @@ function build_model(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
     mip = Model(optimizer_mip)
     # set_silent(mip)
 
-    # ==============================================================================
+    # ==========================================================================
     # Sets and indices
     C = sets[:C]
     G = sets[:G]
@@ -151,7 +153,7 @@ function build_model(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
 
     @constraint(mip, [c in C, o in O, t in T], 0 <= pC[c,o,t])
     @constraint(mip, [c in C, o in O, t in T], pC[c,o,t] <= 
-                sum(pCmax[c,τ] for τ in 1:t))
+                sum(pCmax[c,τ] for τ in 1:t)*CF_C[c][t][o])
 
     @constraint(mip, [g in G, o in O, t in T], 
                 C_E[g][t] - λ[o,t] + μEmax[g,o,t] >= 0)
@@ -178,26 +180,41 @@ function build_model(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
                 zMax[c,q,o,t] <= (1 - uOpt[c,q,t])*M)
 
     # Emissions constraints
-    @constraint(mip, [c in C, o in O, t in T], em_c[c,o,t] == EM_C[c]*pC[c,o,t])
-    @constraint(mip, [g in G, o in O, t in T], em_e[g,o,t] == EM_E[g]*pE[g,o,t])
+    @constraint(mip, [c in C, o in O, t in T], em_c[c,o,t] == Sb*EM_C[c]*pC[c,o,t]) # Emissions from candidate units (tCO2eq)
+    @constraint(mip, [g in G, o in O, t in T], em_e[g,o,t] == Sb*EM_E[g]*pE[g,o,t]) # Emissions from existing units (tCO2eq)
 
     @constraint(mip, [o in O, t in T], em[o,t] == sum(em_e[g,o,t] for g in G) 
                 + sum(em_c[c,o,t] for c in C))
-    @constraint(mip, [o in O], em[o, last(T)] <= 0)
+    @constraint(mip, [t in last(T)], sum(ρ[t][o]*em[o,t] for o in O)/1e6 <= 10) # Emissions cap in final year (MtCO2eq)
 
     # ==========================================================================
+    # Generation cost
+    gen_cost = Sb*sum(
+        ρ[t][o] * (
+            sum(C_E[g][t] * pE[g,o,t] for g in G) +
+            sum(C_C[c][t] * pC[c,o,t] for c in C)
+        ) for o in O, t in T
+    )
+
+    # Investment cost
+    annual_inv = Sb*sum(
+        a[t] * sum(
+            I_C_A[c][t] * sum(pCmax[c,τ] for τ in 1:t) 
+            for c in C
+        ) for t in T
+    )
+    # Fixed O&M
+    fixed_cost = Sb*(
+        sum(a[t] * sum(F_E[g] * PEmax[g] for g in G) for t in T) +
+        sum(a[t] * sum(F_C[c] * sum(pCmax[c,τ] for τ in 1:t) for c in C) for t in T)
+    )
+    # Emissions (with Sbase inside em_c/em_e constraints)
+    carbon_cost = sum(
+        c_tax[t]/1e3 * ρ[t][o] * em[o,t] 
+        for o in O, t in T
+    )
+    
     # Objective
-    gen_cost = sum(sum(ρ[t][o]*(sum(C_E[g][t]*pE[g,o,t] for g in G) + 
-                    sum(C_C[c][t]*pC[c,o,t] for c in C)) for o in O) for t in T)
-
-    annual_inv = sum(a[t]*sum(I_C_A[c][t]*pCmax[c,t] for c in C) for t in T) # Change to analyze 
-
-    # carbon_cost = sum(c_tax[t] * ρ[t][o] * em[o,t] for o in O, t in T)
-    carbon_cost = 0.0
-
-    fixed_cost = sum(a[t]*sum(F_E[g]*PEmax[g] for g in G) for t in T) + 
-                 sum(a[t]*sum(F_C[c]*sum(pCmax[c,τ] for τ in 1:t) for c in C) for t in T)
-
     obj = gen_cost + annual_inv + carbon_cost + fixed_cost
 
     @objective(mip, Min, obj)

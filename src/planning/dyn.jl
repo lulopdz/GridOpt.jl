@@ -25,7 +25,7 @@ function dyn(optimizer_mip = Gurobi.Optimizer)
     dims = get_dimensions(cand, exist, demands)
     sets = define_sets(dims)
     params = define_parameters(cand, exist, demands)
-    mip = build_model(sets, params, ρ, a, M, optimizer_mip)
+    mip = build_model_lp(sets, params, ρ, a, M, optimizer_mip)
     results = solve_model(mip, params)
 
     return results
@@ -100,6 +100,7 @@ function build_model(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
     T = sets[:T]
     O = sets[:O]
     Q = sets[:Q]
+
     PD = params[:PD]
     
     C_C = params[:C_C]
@@ -220,4 +221,123 @@ function build_model(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
     @objective(mip, Min, obj)
 
     return mip 
+end
+
+function build_model_lp(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
+    mip = Model(optimizer_mip)
+
+    # ==============================================================
+    # Sets
+    C = sets[:C]
+    G = sets[:G]
+    D = sets[:D]
+    T = sets[:T]
+    O = sets[:O]
+
+    # ==============================================================
+    # Parameters
+    PD    = params[:PD]       # demand[d][t][o] in MW before normalization
+    C_C   = params[:C_C]      # $/MWh
+    C_E   = params[:C_E]      # $/MWh
+    I_C_A = params[:I_C_A]    # $/MW-year
+    F_E   = params[:F_E]      # $/MW-year
+    F_C   = params[:F_C]      # $/MW-year
+    
+    P_Opt = params[:P_Opt]    # size option (not needed anymore unless useful)
+    PEmax = params[:PEmax]    # p.u. maximum existing capacity
+    Pmin_E = params[:Pmin_E]  # p.u. minimum existing capacity
+    CF_E  = params[:CF_E]     # cap factor existing
+    CF_C  = params[:CF_C]     # cap factor candidates
+    EM_C  = params[:EM_C]     # tCO₂/MWh
+    EM_E  = params[:EM_E]     # tCO₂/MWh
+
+    # ==============================================================
+    # Variables
+
+    # investment decisions (p.u.)
+    @variable(mip, pCmax[c in C, t in T] >= 0)
+
+    # dispatch (p.u.)
+    @variable(mip, pE[g in G, o in O, t in T] >= 0)
+    @variable(mip, pC[c in C, o in O, t in T] >= 0)
+
+    # emissions (tons)
+    @variable(mip, em_c[c in C, o in O, t in T] >= 0)
+    @variable(mip, em_e[g in G, o in O, t in T] >= 0)
+    @variable(mip, em[o in O, t in T] >= 0)
+
+    # ==============================================================
+    # Constraints
+
+    # Load balance (MW = p.u. * Sb)
+    @constraint(mip, [o in O, t in T],
+        sum(pE[g,o,t] for g in G) +
+        sum(pC[c,o,t] for c in C)
+        ==
+        sum(PD[d][t][o] for d in D)
+    )
+
+    # Existing generator dispatch limits
+    @constraint(mip, [g in G, o in O, t in T],
+        Pmin_E[g]*PEmax[g] <= pE[g,o,t] <= PEmax[g] * CF_E[g][t][o]
+    )
+
+    @constraint(mip, [c in C, t in T], sum(pCmax[c,τ] for τ in 1:t) <= P_Opt[c][t][end])
+
+    # Candidate generator dispatch limits
+    @constraint(mip, [c in C, o in O, t in T],
+        pC[c,o,t] <= sum(pCmax[c,τ] for τ in 1:t) * CF_C[c][t][o]
+    )
+
+    # Emissions (tons)
+    @constraint(mip, [c in C, o in O, t in T],
+        em_c[c,o,t] == EM_C[c] * Sb * pC[c,o,t]
+    )
+    @constraint(mip, [g in G, o in O, t in T],
+        em_e[g,o,t] == EM_E[g] * Sb * pE[g,o,t]
+    )
+
+    @constraint(mip, [o in O, t in T],
+        em[o,t] == sum(em_c[c,o,t] for c in C) + sum(em_e[g,o,t] for g in G)
+    )
+
+    @constraint(mip, [o in O], em[o, last(T)] <= 0)
+
+    # ==============================================================
+    # Objective Function (all CAD)
+
+    # 1. Generation cost
+    gen_cost =
+        Sb * sum(
+            ρ[t][o] * (
+                sum(C_E[g][t] * pE[g,o,t] for g in G) +
+                sum(C_C[c][t] * pC[c,o,t] for c in C)
+            )
+            for o in O, t in T
+        )
+
+    # 2. Annualized investment cost
+    annual_inv =
+        Sb * sum(
+            a[t] * sum(I_C_A[c][t] * sum(pCmax[c,τ] for τ in 1:t) for c in C)
+            for t in T
+        )
+
+    # 3. Fixed O&M
+    fixed_cost =
+        Sb * (
+            sum(a[t] * sum(F_E[g] * PEmax[g] for g in G) for t in T) +
+            sum(a[t] * sum(F_C[c] * sum(pCmax[c,τ] for τ in 1:t) for c in C) for t in T)
+        )
+
+    # 4. Carbon cost ($/tCO₂ * tons)
+    carbon_cost =
+        sum(c_tax[t]/1e3 * ρ[t][o] * em[o,t] for o in O, t in T)
+
+    # carbon_cost = 0.0  # No carbon cost in LP version
+
+    # Final objective
+    @objective(mip, Min, gen_cost + annual_inv + fixed_cost + carbon_cost)
+
+    return mip
 end

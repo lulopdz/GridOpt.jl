@@ -7,14 +7,14 @@ include(pf * "/GridOpt.jl/src/planning/utils.jl")
 include(pf * "/GridOpt.jl/src/plot_defaults.jl")
 set_plot_defaults()
 
-scenario = "nuclear_out"
+scenario = "full"
 println("Running EMH scenario: " * scenario)
 ep = joinpath(pf, "GridOpt.jl/data/planning/EMH_" * scenario * ".xlsx")
 solver = Gurobi.Optimizer
 
 # Models
-include("dyn.jl")
-results = dyn(solver)
+include("dyn_net.jl")
+results = dyn_net(solver)
 
 # Results output
 Sbase = 100.0  # MVA base power
@@ -45,9 +45,12 @@ po = plot(years, cum_cap',
     ylabel="Total Capacity (GW)", 
     legend=false,
     fillalpha=0.6,
-    # ylim=(150,300),
-    # yticks=150:25:300,
-    size=(600,400))
+    ylim=(150, 400),
+    yticks=150:25:400,
+    size=(600,400),
+    markershape=:circle,
+    markerstrokewidth=0.0,
+)
 
 savefig(po, "GridOpt.jl/results/emh/" * scenario * "/cum_cap_" * scenario * ".pdf")
 
@@ -60,7 +63,7 @@ po2 = plot(years, total_em'*Sbase/1e6,
     legend=false,
     seriestype = :bar,
     lc = :match,
-    # ylim=(0,70),
+    ylim=(0,50),
     size=(600,400))
 
 savefig(po2, "GridOpt.jl/results/emh/" * scenario * "/total_em_" * scenario * ".pdf")
@@ -91,8 +94,11 @@ po3 = areaplot(
     seriestype = :bar,
     size = (700, 450),
     lw = 0.0,
+    lc = :match,
     fillalpha = 0.85,
     legendcolumns = 2,
+    ylim=(0,100),
+    yticks=0:10:100
 )
 
 savefig(po3, "GridOpt.jl/results/emh/" * scenario * "/tech_cap_" * scenario * ".pdf")
@@ -145,12 +151,14 @@ for (t, year) in enumerate(years)
         xlabel = "Operating Conditions",
         ylabel = "Power dispatch (GWh)",
         label = permutedims(unique_techs),
-        legend = :outerright,
-        size = (800, 450),
-        lw = 0.4,
+        legend = :outertop,
+        size = (1000, 600),
+        lw = 0.0,
         fillalpha = 0.85,
         left_margin = 4mm,
         bottom_margin = 4mm,
+        legendcolumns = 4,
+        ylims=(0,200)
     )
 
     savefig(po4, "GridOpt.jl/results/emh/$scenario/energy_by_tech_$year.pdf")
@@ -159,4 +167,3 @@ end
 
 # ==============================================================================
 println("EMH scenario " * scenario * " completed.")
-

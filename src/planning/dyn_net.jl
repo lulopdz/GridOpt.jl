@@ -21,7 +21,7 @@ function dyn_net(optimizer_mip = Gurobi.Optimizer)
     dims = get_dimensions(cand, exist, lines, demands)
     sets, sets_n = define_sets(dims, cand, exist, lines, demands, ref)
     params = define_parameters(cand, exist, lines, demands)
-    mip = build_model(sets, sets_n, params, ρ, a, M, optimizer_mip)
+    mip = build_model_lp(sets, sets_n, params, ρ, a, M, optimizer_mip)
     results = solve_model(mip, params)
 
     return results
@@ -280,6 +280,176 @@ function build_model(sets, sets_n, params, ρ, a, M, optimizer_mip = Gurobi.Opti
     @objective(mip, Min, obj)
 
     write_to_file(mip, "GridOpt.jl/scenarios/gull_island.mps")
+
+    return mip
+end
+
+function build_model_lp(sets, sets_n, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
+
+    mip = Model(optimizer_mip)
+
+    # ==============================================================
+    # Sets
+    C   = sets[:C]
+    G   = sets[:G]
+    D   = sets[:D]
+    L   = sets[:L]
+    N   = sets[:N]
+    Nr  = sets[:Nr]          # non reference buses
+    T   = sets[:T]
+    O   = sets[:O]
+
+    r   = sets[:r]           # receiving node of line l
+    s   = sets[:s]           # sending node of line l
+    ng  = sets[:ng]          # bus of generator g
+    nc  = sets[:nc]          # bus of candidate c
+    ref = sets[:ref]         # reference bus set (singleton usually)
+
+    Ω_C = sets_n[:Ω_C]       # candidates at node n
+    Ω_D = sets_n[:Ω_D]       # demands at node n
+    Ω_E = sets_n[:Ω_E]       # existing generators at node n
+
+    # ==============================================================
+    # Parameters
+
+    B      = params[:B]       # line susceptances (consistent with p.u. base)
+    F      = params[:F]       # line thermal limits (assume already in p.u. or scaled)
+    PD     = params[:PD]      # demand[d][t][o] in MW
+    C_C    = params[:C_C]     # $/MWh
+    C_E    = params[:C_E]     # $/MWh
+    I_C_A  = params[:I_C_A]   # $/MW year
+    F_E    = params[:F_E]     # $/MW year
+    F_C    = params[:F_C]     # $/MW year
+
+    P_Opt  = params[:P_Opt]   # upper expansion limit per tech and year
+    PEmax  = params[:PEmax]   # existing capacity (p.u.)
+    Pmin_E = params[:Pmin_E]  # min generation fraction of PEmax
+    CF_E   = params[:CF_E]    # capacity factor existing
+    CF_C   = params[:CF_C]    # capacity factor candidates
+
+    EM_C   = params[:EM_C]    # tCO2 / MWh
+    EM_E   = params[:EM_E]    # tCO2 / MWh
+
+    # ==============================================================
+    # Variables
+
+    # investment decisions (p.u.)
+    @variable(mip, pCmax[c in C, t in T] >= 0)
+
+    # dispatch (p.u.)
+    @variable(mip, pE[g in G, o in O, t in T] >= 0)
+    @variable(mip, pC[c in C, o in O, t in T] >= 0)
+
+    # line flows (p.u.)
+    @variable(mip, pL[l in L, o in O, t in T])
+
+    # bus voltage angles (rad)
+    @variable(mip, θ[n in N, o in O, t in T])
+
+    # emissions (tons)
+    @variable(mip, em_c[c in C, o in O, t in T] >= 0)
+    @variable(mip, em_e[g in G, o in O, t in T] >= 0)
+    @variable(mip, em[o in O, t in T] >= 0)
+
+    # ==============================================================
+    # Constraints
+
+    # Nodal power balance
+    # Left side in p.u., right side in MW, so we multiply p.u. terms by Sb
+    @constraint(mip, [n in N, o in O, t in T],
+        (
+            sum(pE[g,o,t] for g in Ω_E[n] if g != 0) +
+            sum(pC[c,o,t] for c in Ω_C[n] if c != 0) -
+            sum(pL[l,o,t] for l in L if s[l] == n) +
+            sum(pL[l,o,t] for l in L if r[l] == n)
+        )
+        ==
+        sum(PD[d][t][o] for d in Ω_D[n] if d != 0)
+    )
+
+    # DC flow equations
+    @constraint(mip, [l in L, o in O, t in T],
+        pL[l,o,t] == B[l] * (θ[r[l],o,t] - θ[s[l],o,t])
+    )
+
+    # Line limits
+    # If F is in MW, then use -F[l] <= Sb * pL <= F[l]
+    @constraint(mip, [l in L, o in O, t in T],
+        -F[l] <= Sb * pL[l,o,t] <= F[l]
+    )
+
+    # Existing generator limits (p.u.)
+    @constraint(mip, [g in G, o in O, t in T],
+        Pmin_E[g] * PEmax[g] <= pE[g,o,t] <= PEmax[g] * CF_E[g][t][o]
+    )
+
+    # Cumulative capacity limit from P_Opt
+    @constraint(mip, [c in C, t in T],
+        sum(pCmax[c,τ] for τ in 1:t) <= P_Opt[c][t][end]
+    )
+
+    # Candidate generator dispatch limits (p.u.)
+    @constraint(mip, [c in C, o in O, t in T],
+        pC[c,o,t] <= sum(pCmax[c,τ] for τ in 1:t)*CF_C[c][t][o]
+    )
+
+    # Angle bounds and reference bus
+    @constraint(mip, [n in N, o in O, t in T],
+        -2*pi <= θ[n,o,t] <= 2*pi
+    )
+    @constraint(mip, [n in ref, o in O, t in T],
+        θ[n,o,t] == 0
+    )
+
+    # Emissions (tons)
+    @constraint(mip, [c in C, o in O, t in T],
+        em_c[c,o,t] == EM_C[c] * Sb * pC[c,o,t]
+    )
+    @constraint(mip, [g in G, o in O, t in T],
+        em_e[g,o,t] == EM_E[g] * Sb * pE[g,o,t]
+    )
+    @constraint(mip, [o in O, t in T],
+        em[o,t] == sum(em_c[c,o,t] for c in C) + sum(em_e[g,o,t] for g in G)
+    )
+
+    # Optional final period emission constraint (kept as in your code)
+    @constraint(mip, [o in O],
+        em[o, last(T)] <= 0
+    )
+
+    # ==============================================================
+    # Objective
+
+    # 1. Generation cost
+    gen_cost =
+        Sb * sum(
+            ρ[t][o] * (
+                sum(C_E[g][t] * pE[g,o,t] for g in G) +
+                sum(C_C[c][t] * pC[c,o,t] for c in C)
+            )
+            for o in O, t in T
+        )
+
+    # 2. Annualized investment cost
+    annual_inv =
+        Sb * sum(
+            a[t] * sum(I_C_A[c][t] * sum(pCmax[c,τ] for τ in 1:t) for c in C)
+            for t in T
+        )
+
+    # 3. Fixed O&M
+    fixed_cost =
+        Sb * (
+            sum(a[t] * sum(F_E[g] * PEmax[g] for g in G) for t in T) +
+            sum(a[t] * sum(F_C[c] * sum(pCmax[c,τ] for τ in 1:t) for c in C) for t in T)
+        )
+
+    # 4. Carbon cost
+    # If c_tax is in $/tCO2, em in tons, ρ in hours, divide by 1e3 if you used  $/kg earlier
+    carbon_cost =
+        sum(c_tax[t] / 1e3 * ρ[t][o] * em[o,t] for o in O, t in T)
+
+    @objective(mip, Min, gen_cost + annual_inv + fixed_cost + carbon_cost)
 
     return mip
 end

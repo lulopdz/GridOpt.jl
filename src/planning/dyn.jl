@@ -185,8 +185,8 @@ function build_model(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer)
 
     @constraint(mip, [o in O, t in T], em[o,t] == sum(em_e[g,o,t] for g in G) 
                 + sum(em_c[c,o,t] for c in C))
-    @constraint(mip, [t in last(T)], sum(ρ[t][o]*em[o,t] for o in O)/1e6 <= 10) # Emissions cap in final year (MtCO2eq)
 
+    # @constraint(mip, [o in O], em[o, last(T)] <= 0)
     # ==========================================================================
     # Generation cost
     gen_cost = Sb*sum(

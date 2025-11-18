@@ -7,7 +7,7 @@ include(pf * "/GridOpt.jl/src/planning/utils.jl")
 include(pf * "/GridOpt.jl/src/plot_defaults.jl")
 set_plot_defaults()
 
-scenario = "AB"
+scenario = "nuclear_out"
 println("Running EMH scenario: " * scenario)
 ep = joinpath(pf, "GridOpt.jl/data/planning/EMH_" * scenario * ".xlsx")
 solver = Gurobi.Optimizer
@@ -87,11 +87,12 @@ po3 = areaplot(
     xlabel = "Year",
     ylabel = "New Capacity (GW)",
     label = permutedims(unique_techs),
-    legend = :topright,
+    legend = :outertop,
     seriestype = :bar,
     size = (700, 450),
     lw = 0.0,
     fillalpha = 0.85,
+    legendcolumns = 2,
 )
 
 savefig(po3, "GridOpt.jl/results/emh/" * scenario * "/tech_cap_" * scenario * ".pdf")

@@ -7,29 +7,29 @@ include(pf * "/GridOpt.jl/src/planning/utils.jl")
 include(pf * "/GridOpt.jl/src/plot_defaults.jl")
 set_plot_defaults()
 
-scenario = "full"
+scenario = "atlantic"
 println("Running EMH scenario: " * scenario)
 ep = joinpath(pf, "GridOpt.jl/data/planning/EMH_" * scenario * ".xlsx")
 solver = Gurobi.Optimizer
 
 # Models
-include("dyn_net.jl")
-results = dyn_net(solver)
+include("dyn.jl")
+results = dyn(solver)
 
 # Results output
 Sbase = 100.0  # MVA base power
-CSV.write("GridOpt.jl/results/emh/" * scenario * "/new_cap_" * scenario * ".csv", 
+CSV.write("GridOpt.jl/results/emh/" * scenario * "/data/new_cap_" * scenario * ".csv", 
             DataFrame(Sbase*results[:pCmax].data, :auto)
 )
 
 years = [2025, 2030, 2035, 2040, 2045, 2050]
 T = 1:length(years)
 for t in T
-    CSV.write("GridOpt.jl/results/emh/" * scenario * "/emissions_t$(years[t])_" * scenario * ".csv", 
+    CSV.write("GridOpt.jl/results/emh/" * scenario * "/data/emissions_t$(years[t])_" * scenario * ".csv", 
     DataFrame(results[:em][:,:,t].data, :auto))
-    CSV.write("GridOpt.jl/results/emh/" * scenario * "/new_gen_dispatch_t$(years[t])_" * scenario * ".csv", 
+    CSV.write("GridOpt.jl/results/emh/" * scenario * "/data/new_gen_dispatch_t$(years[t])_" * scenario * ".csv", 
     DataFrame(Sbase*results[:pC][:,:,t].data, :auto))
-    CSV.write("GridOpt.jl/results/emh/" * scenario * "/exist_gen_dispatch_t$(years[t])_" * scenario * ".csv", 
+    CSV.write("GridOpt.jl/results/emh/" * scenario * "/data/exist_gen_dispatch_t$(years[t])_" * scenario * ".csv", 
     DataFrame(Sbase*results[:pE][:,:,t].data, :auto))
 end
 
@@ -45,14 +45,14 @@ po = plot(years, cum_cap',
     ylabel="Total Capacity (GW)", 
     legend=false,
     fillalpha=0.6,
-    ylim=(150, 400),
-    yticks=150:25:400,
+    ylim=(150, 450),
+    yticks=150:25:450,
     size=(600,400),
     markershape=:circle,
     markerstrokewidth=0.0,
 )
 
-savefig(po, "GridOpt.jl/results/emh/" * scenario * "/cum_cap_" * scenario * ".pdf")
+savefig(po, "GridOpt.jl/results/emh/" * scenario * "/plots/cum_cap_" * scenario * ".pdf")
 
 # ==============================================================================
 total_emissions = [sum(results[:em].data[:, o, t])*ρ[t][o] for o in 1:48, t in 1:6]
@@ -66,7 +66,7 @@ po2 = plot(years, total_em'*Sbase/1e6,
     ylim=(0,50),
     size=(600,400))
 
-savefig(po2, "GridOpt.jl/results/emh/" * scenario * "/total_em_" * scenario * ".pdf")
+savefig(po2, "GridOpt.jl/results/emh/" * scenario * "/plots/total_em_" * scenario * ".pdf")
 
 # ==============================================================================
 # Plot showing new capacity by technology type
@@ -101,7 +101,7 @@ po3 = areaplot(
     yticks=0:10:100
 )
 
-savefig(po3, "GridOpt.jl/results/emh/" * scenario * "/tech_cap_" * scenario * ".pdf")
+savefig(po3, "GridOpt.jl/results/emh/" * scenario * "/plots/tech_cap_" * scenario * ".pdf")
 
 # ==============================================================================
 # Stacked area plot: dispatch by technology across op. points
@@ -161,7 +161,7 @@ for (t, year) in enumerate(years)
         ylims=(0,200)
     )
 
-    savefig(po4, "GridOpt.jl/results/emh/$scenario/energy_by_tech_$year.pdf")
+    savefig(po4, "GridOpt.jl/results/emh/$scenario/plots/energy_by_tech_$year.pdf")
 
 end
 

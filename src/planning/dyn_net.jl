@@ -85,7 +85,7 @@ end
 function define_parameters(cand, exist, lines, demands)
     return Dict(
         :B => 2*lines[:Susceptance],                 # Susceptance of transmission line [S]
-        :F => 5*lines[:Capacity],                    # Capacity of transmission line [MW]
+        :F => 2*lines[:Capacity],                    # Capacity of transmission line [MW]
         :PD => demands[:Load],                     # Load of demand d [MW]
         :C_C => cand[:Prod_cost],                  # Production cost of candidate generating unit c [$/MWh]
         :I_C_A => cand[:Inv_cost],                 # Annualized inv cost of candidate generating unit c [$/MW]
@@ -413,9 +413,7 @@ function build_model_lp(sets, sets_n, params, ρ, a, M, optimizer_mip = Gurobi.O
     )
 
     # Optional final period emission constraint (kept as in your code)
-    @constraint(mip, [o in O],
-        em[o, last(T)] <= 0
-    )
+    # @constraint(mip, [o in O], em[o, last(T)] <= 0)
 
     # ==============================================================
     # Objective

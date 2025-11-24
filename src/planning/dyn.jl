@@ -301,7 +301,7 @@ function build_model_lp(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer
         em[o,t] == sum(em_c[c,o,t] for c in C) + sum(em_e[g,o,t] for g in G)
     )
 
-    @constraint(mip, [o in O], em[o, last(T)] <= 0)
+    # @constraint(mip, [o in O], em[o, last(T)] <= 0)
 
     # ==============================================================
     # Objective Function (all CAD)

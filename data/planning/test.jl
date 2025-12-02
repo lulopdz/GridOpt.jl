@@ -11,6 +11,7 @@ using DataFrames, XLSX
 xf = XLSX.readxlsx(ep)
 # ref = 116                                # Slack node
 ref = 515                                # Slack node
+prov = "AB"
 
 # Determine the number of time periods and operating conditions
 T = size(xf["economic"][:])[1] - 1
@@ -18,12 +19,12 @@ O = size(xf["economic"][:])[2] - 3
 
 # ==============================================================================
 # Functions to Load Data
-
 # Function to load candidate generators data
 function load_cand(xf, T)
     m = xf["cand"][:]
     df = DataFrame(m[2:end, :], :auto)
     rename!(df, Symbol.(m[1, :]))
+    # df = filter(row -> row.province == prov, df)
     prod_cost = [Vector{Float64}(df[:, Symbol("Prod_cost_t$i")]) for i in 1:T] 
     inv_cost = [Vector{Float64}(df[:, Symbol("Inv_cost_t$i")]) for i in 1:T]
     CF = [[Vector{Float64}(df[:, Symbol("CF_t$j"*"_o$i")]) for i in 1:O] for j in 1:T]
@@ -47,6 +48,7 @@ function load_exist(xf, T)
     m = xf["exist"][:]
     df = DataFrame(m[2:end, :], :auto)
     rename!(df, Symbol.(m[1, :]))
+    # df = filter(row -> row.province == prov, df)
     prod_cost = [Vector{Float64}(df[:, Symbol("Prod_cost_t$i")]) for i in 1:T]
     CF = [[Vector{Float64}(df[:, Symbol("CF_t$j"*"_o$i")]) for i in 1:O] for j in 1:T]
     G = length(df.ID)
@@ -69,6 +71,7 @@ function load_lines(xf)
     m = xf["lines"][:]
     df = DataFrame(m[2:end, :], :auto)
     rename!(df, Symbol.(m[1, :]))
+    # df = filter(row -> row.province == prov, df)
     return Dict(
         :ID          => Vector{Int64}(df.ID),
         :From        => Vector{Int64}(df.From),
@@ -83,6 +86,7 @@ function load_demands(xf, T, O)
     m = xf["demand"][:]
     df = DataFrame(m[2:end, :], :auto)
     rename!(df, Symbol.(m[1, :]))
+    # df = filter(row -> row.province == prov, df)
     demands = [[Vector{Float64}(df[:, Symbol("Load_t$j"*"_o$i")]) for i in 1:O] for j in 1:T]
     D = length(df.ID)
     return Dict(

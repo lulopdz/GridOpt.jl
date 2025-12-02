@@ -7,7 +7,7 @@ include(pf * "/GridOpt.jl/src/planning/utils.jl")
 include(pf * "/GridOpt.jl/src/plot_defaults.jl")
 set_plot_defaults()
 
-scenario = "atlantic"
+scenario = "ref"
 println("Running EMH scenario: " * scenario)
 ep = joinpath(pf, "GridOpt.jl/data/planning/EMH_" * scenario * ".xlsx")
 solver = Gurobi.Optimizer
@@ -97,8 +97,8 @@ po3 = areaplot(
     lc = :match,
     fillalpha = 0.85,
     legendcolumns = 2,
-    ylim=(0,100),
-    yticks=0:10:100
+    ylim=(0,120),
+    yticks=0:10:120
 )
 
 savefig(po3, "GridOpt.jl/results/emh/" * scenario * "/plots/tech_cap_" * scenario * ".pdf")

@@ -301,7 +301,7 @@ function build_model_lp(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer
         em[o,t] == sum(em_c[c,o,t] for c in C) + sum(em_e[g,o,t] for g in G)
     )
 
-    # @constraint(mip, [o in O], em[o, last(T)] <= 0)
+    @constraint(mip, [o in O], em[o, last(T)] <= 0)  # Emissions cap in final year
 
     # ==============================================================
     # Objective Function (all CAD)
@@ -332,7 +332,7 @@ function build_model_lp(sets, params, ρ, a, M, optimizer_mip = Gurobi.Optimizer
 
     # 4. Carbon cost ($/tCO₂ * tons)
     carbon_cost =
-        sum(c_tax[t]/1e3 * ρ[t][o] * em[o,t] for o in O, t in T)
+        sum(a[t] * c_tax[t] * ρ[t][o] * em[o,t] for o in O, t in T)
 
     # carbon_cost = 0.0  # No carbon cost in LP version
 

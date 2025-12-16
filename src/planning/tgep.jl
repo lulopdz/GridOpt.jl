@@ -13,8 +13,8 @@ include("../utils/tgep_report.jl")
 
 # ==============================================================================
 # Default configurations
-DEFAULT_CONFIG = TEPConfig(true, false, 10e3, HiGHS.Optimizer)
-SINGLE_NODE_CONFIG = TEPConfig(false, false, 10e3, HiGHS.Optimizer)
+DEFAULT_CONFIG = TEPConfig(true, false, true, 10e3, Gurobi.Optimizer)
+SINGLE_NODE_CONFIG = TEPConfig(false, false, true, 10e3, Gurobi.Optimizer)
 
 # ==============================================================================
 # Main Execution
@@ -32,3 +32,5 @@ model, sets, params = build_tep_model(config, data)
 solve_tep!(model, config, sets, params)
 
 # report_tep_solution(model, config, sets, params)
+save_path = joinpath(pwd(), pkg, "results", proj)
+summarize_tep_results(model, config, sets, params; save_to=save_path)

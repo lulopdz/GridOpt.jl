@@ -2,6 +2,7 @@
 struct TEPConfig
     include_network::Bool      # true = multi-node network, false = single node
     use_integer::Bool          # true = binary investments, false = continuous relaxation
+    per_unit::Bool            # true = per unit system, false = MW system
     bigM::Float64             # Big-M for candidate line constraints
     solver                    # Optimizer (e.g., GLPK.Optimizer)
 end
@@ -65,32 +66,50 @@ function process_tep_sets(data)
     
     # Scenario and time weights
     ρ = Dict(O .=> sce.weight)
+    Pdf = Dict(O .=> sce.demand_factor)
+
+    Pdg = Dict(T .=> econ.demand_growth)
     α = Dict(T .=> econ.a)
     
     return (B=B, G=G, D=D, E=E, K=K, L=L, T=T, O=O, 
-            Ωg=Ωg, Ωk=Ωk, Ωd=Ωd, fr=fr, to=to, frn=frn, ton=ton, ρ=ρ, α=α)
+            Ωg=Ωg, Ωk=Ωk, Ωd=Ωd, 
+            fr=fr, to=to, frn=frn, ton=ton, 
+            ρ=ρ, Pdf=Pdf, Pdg=Pdg, α=α)
 end
 
 
-function process_tep_params(data)
+function process_tep_params(data, config::TEPConfig)
     gen, load, line, gcand, tcand = data.gen, data.load, data.line, data.gcand, data.tcand
     
+    if config.per_unit
+        Sb = 100.0  # Base power in MVA
+        PriceFactor = 1.0e3  # Cost conversion from $/MWh to $/pu
+        xe = Dict(line.id .=> line.reactance ./ (line.voltage .^2 / Sb))
+        xl = Dict(tcand.id .=> tcand.reactance ./ (tcand.voltage .^2 / Sb))
+    else
+        Sb = 1.0    # No per unit conversion
+        PriceFactor = 1.0    # No cost conversion
+        xe = Dict(line.id .=> line.reactance)
+        xl = Dict(tcand.id .=> tcand.reactance)
+    end
+
+
     return (
         # Existing infrastructure parameters
-        Pgmax = Dict(gen.id .=> gen.capacity_mw),
-        Pgmin = Dict(gen.id .=> gen.Pmin),
-        Pgcost = Dict(gen.id .=> gen.om_cost),
-        Pd = Dict(load.id .=> load.demand_mw),
-        xe = Dict(line.id .=> line.reactance),
-        Fmax = Dict(line.id .=> line.ttc_mw),
+        Pgmax = Dict(gen.id .=> gen.capacity_mw ./ Sb),
+        Pgmin = Dict(gen.id .=> gen.Pmin ./ Sb),
+        Pgcost = Dict(gen.id .=> gen.om_cost ./ PriceFactor),
+        Pd = Dict(load.id .=> load.demand_mw ./ Sb),
+        Fmax = Dict(line.id .=> line.ttc_mw ./ Sb),
         # Candidate infrastructure parameters
-        Pkmax = Dict(gcand.id .=> gcand.capacity_mw),
-        Pkmin = Dict(gcand.id .=> gcand.Pmin),
-        Pkcost = Dict(gcand.id .=> gcand.om_cost),
-        Pkinv = Dict(gcand.id .=> gcand.inv_cost),
-        Flinv = Dict(tcand.id .=> tcand.inv_cost),
-        xl = Dict(tcand.id .=> tcand.reactance),
-        Fmaxl = Dict(tcand.id .=> tcand.ttc_mw),
+        Pkmax = Dict(gcand.id .=> gcand.capacity_mw ./ Sb),
+        Pkmin = Dict(gcand.id .=> gcand.Pmin ./ Sb),
+        Pkcost = Dict(gcand.id .=> gcand.om_cost ./ PriceFactor),
+        Pkinv = Dict(gcand.id .=> gcand.inv_cost ./ PriceFactor),
+        Flinv = Dict(tcand.id .=> tcand.inv_cost ./ PriceFactor),
+        Fmaxl = Dict(tcand.id .=> tcand.ttc_mw ./ Sb),
+        xe,
+        xl,
     )
 end
 
@@ -152,6 +171,7 @@ function add_network_constraints!(model, config::TEPConfig, sets, params)
     G, K = sets.G, sets.K
     Ωg, Ωk, Ωd = sets.Ωg, sets.Ωk, sets.Ωd
     fr, to, frn, ton = sets.fr, sets.to, sets.frn, sets.ton
+    Pdf, Pdg = sets.Pdf, sets.Pdg
     pg, pk = model[:pg], model[:pk]
     θ, f, fl, β = model[:θ], model[:f], model[:fl], model[:β]
     xe, xl, Fmax, Fmaxl, Pd = params.xe, params.xl, params.Fmax, params.Fmaxl, params.Pd
@@ -162,7 +182,7 @@ function add_network_constraints!(model, config::TEPConfig, sets, params)
         sum(pg[g, t, o] for g in Ωg[b]) + sum(pk[k, t, o] for k in Ωk[b]) +
         sum(f[e, t, o] for e in E if to[e] == b)   - sum(f[e, t, o] for e in E if fr[e] == b) +
         sum(fl[l, t, o] for l in L if ton[l] == b) - sum(fl[l, t, o] for l in L if frn[l] == b)
-        == sum(Pd[d] for d in Ωd[b])
+        == sum(Pd[d]*Pdf[o]*Pdg[t] for d in Ωd[b])
     )
     
     # DC power flow for existing lines
@@ -234,7 +254,7 @@ end
 function build_tep_model(config::TEPConfig, data)
     # Process data
     sets = process_tep_sets(data)
-    params = process_tep_params(data)
+    params = process_tep_params(data, config)
     
     # Initialize model
     model = Model(config.solver)

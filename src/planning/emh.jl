@@ -97,8 +97,8 @@ po3 = areaplot(
     lc = :match,
     fillalpha = 0.85,
     legendcolumns = 2,
-    ylim=(0,100),
-    yticks=0:10:100
+    ylim=(0,120),
+    yticks=0:10:120
 )
 
 savefig(po3, "GridOpt.jl/results/emh/" * scenario * "/plots/tech_cap_" * scenario * ".pdf")

@@ -1,0 +1,4 @@
+id,node_code_st,node_code_en,voltage,length_km,reactance,ttc_mw
+1,N1,N2,200,50,0.1,100
+2,N1,N3,200,50,0.1,100
+3,N2,N3,200,50,0.1,100

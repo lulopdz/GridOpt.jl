@@ -1,0 +1,11 @@
+id,node_code,voltage_kv,region,latitude,longitude
+1,AB,200,AB,10,15
+2,BC,200,BC,10,15
+3,MB,200,MB,10,15
+4,NB,200,NB,10,15
+5,NL,200,NL,10,15
+6,NS,200,NS,10,15
+7,ON,200,ON,10,15
+8,PE,200,PE,10,15
+9,QC,200,QC,10,15
+10,SK,200,SK,10,15

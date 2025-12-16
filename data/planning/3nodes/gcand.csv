@@ -1,0 +1,2 @@
+id,node_code,region,latitude,longitude,gen_type,Pmin,capacity_mw,om_cost,inv_cost
+1,N2,N,10,15,gas,0,200,40,1500000

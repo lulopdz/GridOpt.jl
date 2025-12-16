@@ -1,0 +1,5 @@
+id,node_code,region,demand_mw,cost_LS
+1,A1,A,200,40
+2,B4,B,150,52
+3,B5,B,100,55
+4,C6,C,200,65

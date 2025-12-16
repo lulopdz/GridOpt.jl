@@ -7,7 +7,7 @@ include(pf * "/GridOpt.jl/src/planning/utils.jl")
 include(pf * "/GridOpt.jl/src/plot_defaults.jl")
 set_plot_defaults()
 
-scenario = "atlantic"
+scenario = "ref"
 println("Running EMH scenario: " * scenario)
 ep = joinpath(pf, "GridOpt.jl/data/planning/EMH_" * scenario * ".xlsx")
 solver = Gurobi.Optimizer

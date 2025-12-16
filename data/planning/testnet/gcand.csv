@@ -1,0 +1,6 @@
+id,node_code,region,latitude,longitude,gen_type,Pmin,capacity_mw,om_cost,inv_cost
+1,A1,A,10,15,gas,0,300,18,1000
+2,A2,A,10,15,gas,0,250,25,1000
+3,A3,A,10,15,gas,0,400,16,1000
+4,B5,B,10,15,gas,0,300,32,1000
+5,C6,C,10,15,gas,0,150,25,1000

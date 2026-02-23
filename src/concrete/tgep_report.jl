@@ -15,7 +15,7 @@ end
 
 function capacity_inv_df(model, sets, params)
     K, T = sets[:K], sets[:T]
-    pkmax, pkinv = model[:pkmax], params.Pkinv
+    pkmax, pkinv = model[:pkmax], params[:Pkinv]
     df = DataFrame(gen_id=Int[], year=Int[], capacity_added_mw=Float64[], cumulative_capacity_mw=Float64[], investment_cost=Float64[])
     for k in K
         cum = 0.0
@@ -31,7 +31,7 @@ end
 function line_inv_df(model, cfg::TEPConfig, sets, params)
     cfg.include_network || return DataFrame()
     L, T = sets[:L], sets[:T]
-    β, flinv = model[:β], params.Flinv
+    β, flinv = model[:β], params[:Flinv]
     df = DataFrame(line_id=Int[], year=Int[], built=Bool[], investment_cost=Float64[])
     for l in L, t in T
         built = value(β[l, t]) > 0.5
@@ -60,7 +60,7 @@ function cost_breakdown(model, cfg::TEPConfig, sets, params)
     G, K, L, T, O = sets[:G], sets[:K], sets[:L], sets[:T], sets[:O]
     α, ρ = sets[:α], sets[:ρ]
     pg, pk, pkmax, β = model[:pg], model[:pk], model[:pkmax], model[:β]
-    pgcost, pkcost, pkinv, flinv = params.Pgcost, params.Pkcost, params.Pkinv, params.Flinv
+    pgcost, pkcost, pkinv, flinv = params[:Pgcost], params[:Pkcost], params[:Pkinv], params[:Flinv]
 
     op = DataFrame(year=Int[], existing_gen=Float64[], candidate_gen=Float64[], total_op=Float64[])
     for t in T
@@ -85,7 +85,7 @@ end
 function yearly_supply_demand(model, sets, params)
     G, K, D, T, O = sets[:G], sets[:K], sets[:D], sets[:T], sets[:O]
     ρ, pdf, pdg = sets[:ρ], sets[:Pdf], sets[:Pdg]
-    pg, pk, pd = model[:pg], model[:pk], params.Pd
+    pg, pk, pd = model[:pg], model[:pk], params[:Pd]
     gwh = 1.0 / 1000.0
     df = DataFrame(year=Int[], demand_gwh=Float64[], existing_gen_gwh=Float64[], candidate_gen_gwh=Float64[], total_gen_gwh=Float64[], balance_gap_gwh=Float64[])
     for t in T

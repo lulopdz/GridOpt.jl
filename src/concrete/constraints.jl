@@ -1,10 +1,10 @@
-
+# src/concrete/constraints.jl
 # ==============================================================================
 # Add Generation Constraints
 function add_generation_constraints!(model, sets, params)
     G, K, T, O = sets[:G], sets[:K], sets[:T], sets[:O]
     pg, pk, pkmax = model[:pg], model[:pk], model[:pkmax]
-    Pgmax, Pgmin, Pkmin, Pkmax = params.Pgmax, params.Pgmin, params.Pkmin, params.Pkmax
+    Pgmax, Pgmin, Pkmin, Pkmax = params[:Pgmax], params[:Pgmin], params[:Pkmin], params[:Pkmax]
     
     # Existing generator limits
     @constraint(model, [g in G, t in T, o in O], Pgmin[g] <= pg[g, t, o])
@@ -36,7 +36,7 @@ function add_network_constraints!(model, config::TEPConfig, sets, params)
     Pdf, Pdg = sets[:Pdf], sets[:Pdg]
     pg, pk = model[:pg], model[:pk]
     θ, f, fl, β = model[:θ], model[:f], model[:fl], model[:β]
-    xe, xl, Fmax, Fmaxl, Pd = params.xe, params.xl, params.Fmax, params.Fmaxl, params.Pd
+    xe, xl, Fmax, Fmaxl, Pd = params[:xe], params[:xl], params[:Fmax], params[:Fmaxl], params[:Pd]
     M = config.bigM
     
     # Power balance at each bus
@@ -70,10 +70,11 @@ end
 function add_single_node_constraints!(model, sets, params)
     G, K, D, T, O = sets[:G], sets[:K], sets[:D], sets[:T], sets[:O]
     pg, pk = model[:pg], model[:pk]
-    Pd = params.Pd
+    Pdf, Pdg = sets[:Pdf], sets[:Pdg]
+    Pd = params[:Pd]
     
     # Simple power balance: total generation = total load
     @constraint(model, demand[t in T, o in O],
-        sum(pg[g, t, o] for g in G) + sum(pk[k, t, o] for k in K) == sum(Pd[d] for d in D)
+        sum(pg[g, t, o] for g in G) + sum(pk[k, t, o] for k in K) == sum(Pd[d]*Pdf[o]*Pdg[t] for d in D)
     )
 end

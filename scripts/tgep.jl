@@ -18,14 +18,14 @@ include("../src/concrete/tgep_report.jl")
 DEFAULT_CONFIG = TEPConfig(
     true,               # network
     false,              # integers
-    true,              # per_unit
+    true,               # per_unit
     10e5,               # bigM
     Gurobi.Optimizer    # solver
 )
 SINGLE_NODE_CONFIG = TEPConfig(
     false,              # network
     false,              # integers
-    false,               # per_unit
+    false,              # per_unit
     10e5,               # bigM
     Gurobi.Optimizer    # solver
 )
@@ -48,3 +48,4 @@ solve_tgep!(model, config, sets, params)
 # report_solution(model, config, sets, params)
 save_path = joinpath(pwd(), pkg, "results", proj)
 summarize_results(model, config, sets, params; save_to=save_path)
+save_plots(model, config, sets, params, save_path)

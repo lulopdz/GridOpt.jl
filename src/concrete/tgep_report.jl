@@ -1,4 +1,5 @@
 using Printf
+using Plots
 
 function gen_dispatch_df(model, sets, params)
     G, K, T, O = sets[:G], sets[:K], sets[:T], sets[:O]
@@ -98,6 +99,60 @@ function yearly_supply_demand(model, sets, params)
     df
 end
 
+function plot_capacity_and_demand(model, cfg::TEPConfig, sets, params; pdf_path::Union{String,Nothing}=nothing)
+    G, K, D, T, O = sets[:G], sets[:K], sets[:D], sets[:T], sets[:O]
+    pd, pgmax = params[:Pd], params[:Pgmax]
+    pdf, pdg = sets[:Pdf], sets[:Pdg]
+    pkmax = model[:pkmax]
+    sb = cfg.per_unit ? 100.0 : 1.0
+
+    years = collect(T)
+    existing_cap_mw = [sum(pgmax[g] for g in G) * sb for _ in years]
+    candidate_cap_mw = [sum(value(pkmax[k, τ]) for k in K for τ in years if τ <= t) * sb for t in years]
+    peak_demand_mw = [maximum(sum(pd[d] * pdf[o] * pdg[t] for d in D) * sb for o in O) for t in years]
+
+    combined = areaplot(
+        years,
+        seriestype=:bar,
+        [existing_cap_mw candidate_cap_mw ],
+        label=["Existing Capacity" "Candidate Capacity"],
+        color=[:steelblue :darkorange],
+        xlabel="Years",
+        ylabel="Capacity (MW)",
+        size=(800, 450),
+        leftmargin=3Plots.mm,
+        bottommargin=3Plots.mm,
+        yformatter = :plain,
+    )
+
+    plot!(
+        combined,
+        years,
+        peak_demand_mw,
+        seriestype=:line,
+        linewidth=3,
+        marker=:circle,
+        color=:black,
+        label="Peak Demand"
+    )
+
+    if !isnothing(pdf_path)
+        mkpath(dirname(pdf_path))
+        savefig(combined, pdf_path)
+        println("✓ Plot saved to: $pdf_path")
+    end
+
+    return combined
+end
+
+function save_plots(model, cfg::TEPConfig, sets, params, out_dir::String)
+    mkpath(out_dir)
+    plot_capacity_and_demand(model, cfg, sets, params; pdf_path=joinpath(out_dir, "capacity_and_demand.pdf"))
+    # Additional plots can be generated and saved here
+end
+
+save_plots(model, config, sets, params, save_path)
+
 function save_results(model, cfg::TEPConfig, sets, params, out_dir::String)
     mkpath(out_dir)
 
@@ -114,6 +169,9 @@ function save_results(model, cfg::TEPConfig, sets, params, out_dir::String)
     CSV.write(joinpath(out_dir, "cost_summary.csv"), costs.summary)
     CSV.write(joinpath(out_dir, "operating_costs.csv"), costs.operating)
     CSV.write(joinpath(out_dir, "investment_costs.csv"), costs.investment)
+
+    save_plots(model, cfg, sets, params, out_dir)
+
     println("\n✓ Results saved to: $out_dir")
 end
 
@@ -202,3 +260,4 @@ function report_solution(model, cfg::TEPConfig, sets, params)
         end
     end
 end
+

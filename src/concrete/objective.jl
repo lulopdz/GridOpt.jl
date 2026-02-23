@@ -1,8 +1,8 @@
 # ==============================================================================
 # Set Objective Function
 function set_tgep_objective!(model, config::TEPConfig, sets, params)
-    G, K, L, T, O = sets.G, sets.K, sets.L, sets.T, sets.O
-    α, ρ = sets.α, sets.ρ
+    G, K, L, T, O = sets[:G], sets[:K], sets[:L], sets[:T], sets[:O]
+    α, ρ = sets[:α], sets[:ρ]
     pg, pk, pkmax, β = model[:pg], model[:pk], model[:pkmax], model[:β]
     Pgcost, Pkcost, Pkinv, Flinv = params.Pgcost, params.Pkcost, params.Pkinv, params.Flinv
     

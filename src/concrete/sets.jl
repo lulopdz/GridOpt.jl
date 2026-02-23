@@ -2,9 +2,9 @@
 # ==============================================================================
 # Process Data and Create Sets
 function process_tgep_sets(data)
-    nodes, gen, load, line = data.nodes, data.gen, data.load, data.line
-    gcand, tcand = data.gcand, data.tcand
-    econ, sce = data.econ, data.sce
+    nodes, gen, load, line = data[:nodes], data[:gen], data[:load], data[:line]
+    gcand, tcand = data[:gcand], data[:tcand]
+    econ, sce = data[:econ], data[:sce]
     
     # Sets and Indices
     B = nodes[!, :id]
@@ -43,8 +43,25 @@ function process_tgep_sets(data)
     Pdg = Dict(T .=> econ.demand_growth)
     α = Dict(T .=> econ.a)
     
-    return (B=B, G=G, D=D, E=E, K=K, L=L, T=T, O=O, 
-            Ωg=Ωg, Ωk=Ωk, Ωd=Ωd, 
-            fr=fr, to=to, frn=frn, ton=ton, 
-            ρ=ρ, Pdf=Pdf, Pdg=Pdg, α=α)
+    return Dict{Symbol, Any}(
+        :B => B,
+        :G => G,
+        :D => D,
+        :E => E,
+        :K => K,
+        :L => L,
+        :T => T,
+        :O => O,
+        :Ωg => Ωg,
+        :Ωk => Ωk,
+        :Ωd => Ωd,
+        :fr => fr,
+        :to => to,
+        :frn => frn,
+        :ton => ton,
+        :ρ => ρ,
+        :Pdf => Pdf,
+        :Pdg => Pdg,
+        :α => α,
+    )
 end

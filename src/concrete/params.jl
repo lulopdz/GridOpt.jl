@@ -1,6 +1,6 @@
 
 function process_tgep_params(data, config::TEPConfig)
-    gen, load, line, gcand, tcand = data.gen, data.load, data.line, data.gcand, data.tcand
+    gen, load, line, gcand, tcand = data[:gen], data[:load], data[:line], data[:gcand], data[:tcand]
     
     if config.per_unit
         Sb = 100.0  # Base power in MVA

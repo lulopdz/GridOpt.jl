@@ -1,210 +1,162 @@
+using Printf
 
-# ==============================================================================
-# Extract Results to DataFrames
-function extract_generation_dispatch(model, sets, params)
-    G, K, T, O = sets.G, sets.K, sets.T, sets.O
+function gen_dispatch_df(model, sets, params)
+    G, K, T, O = sets[:G], sets[:K], sets[:T], sets[:O]
     pg, pk = model[:pg], model[:pk]
-    
-    results = DataFrame(
-        type = String[],
-        id = Int[],
-        year = Int[],
-        hour = Int[],
-        dispatch_mw = Float64[]
-    )
-    
+    df = DataFrame(type=String[], id=Int[], year=Int[], hour=Int[], dispatch_mw=Float64[])
     for g in G, t in T, o in O
-        push!(results, ("existing", g, t, o, value(pg[g, t, o])))
+        push!(df, ("existing", g, t, o, value(pg[g, t, o])))
     end
-    
     for k in K, t in T, o in O
-        push!(results, ("candidate", k, t, o, value(pk[k, t, o])))
+        push!(df, ("candidate", k, t, o, value(pk[k, t, o])))
     end
-    
-    return results
+    df
 end
 
-function extract_capacity_investments(model, sets, params)
-    K, T = sets.K, sets.T
-    pkmax = model[:pkmax]
-    Pkinv = params.Pkinv
-    
-    results = DataFrame(
-        gen_id = Int[],
-        year = Int[],
-        capacity_added_mw = Float64[],
-        cumulative_capacity_mw = Float64[],
-        investment_cost = Float64[]
-    )
-    
+function capacity_inv_df(model, sets, params)
+    K, T = sets[:K], sets[:T]
+    pkmax, pkinv = model[:pkmax], params.Pkinv
+    df = DataFrame(gen_id=Int[], year=Int[], capacity_added_mw=Float64[], cumulative_capacity_mw=Float64[], investment_cost=Float64[])
     for k in K
-        cum_cap = 0.0
+        cum = 0.0
         for t in T
-            cap_added = value(pkmax[k, t])
-            cum_cap += cap_added
-            push!(results, (k, t, cap_added, cum_cap, cap_added * Pkinv[k]))
+            add = value(pkmax[k, t])
+            cum += add
+            push!(df, (k, t, add, cum, add * pkinv[k]))
         end
     end
-    
-    return results
+    df
 end
 
-function extract_line_investments(model, config::TEPConfig, sets, params)
-    if !config.include_network
-        return DataFrame()
-    end
-    
-    L, T = sets.L, sets.T
-    β = model[:β]
-    Flinv = params.Flinv
-    
-    results = DataFrame(
-        line_id = Int[],
-        year = Int[],
-        built = Bool[],
-        investment_cost = Float64[]
-    )
-    
+function line_inv_df(model, cfg::TEPConfig, sets, params)
+    cfg.include_network || return DataFrame()
+    L, T = sets[:L], sets[:T]
+    β, flinv = model[:β], params.Flinv
+    df = DataFrame(line_id=Int[], year=Int[], built=Bool[], investment_cost=Float64[])
     for l in L, t in T
         built = value(β[l, t]) > 0.5
-        cost = built ? Flinv[l] : 0.0
-        push!(results, (l, t, built, cost))
+        push!(df, (l, t, built, built ? flinv[l] : 0.0))
     end
-    
-    return results
+    df
 end
 
-function extract_line_flows(model, config::TEPConfig, sets, params, year=nothing, hour=nothing)
-    if !config.include_network
-        return DataFrame()
-    end
-    
-    E, L, T, O = sets.E, sets.L, sets.T, sets.O
+function line_flow_df(model, cfg::TEPConfig, sets, params, year=nothing, hour=nothing)
+    cfg.include_network || return DataFrame()
+    E, L, T, O = sets[:E], sets[:L], sets[:T], sets[:O]
     f, fl = model[:f], model[:fl]
-    
-    # Use specific year/hour or defaults
-    t_vals = isnothing(year) ? T : [year]
-    o_vals = isnothing(hour) ? O : [hour]
-    
-    results = DataFrame(
-        type = String[],
-        line_id = Int[],
-        year = Int[],
-        hour = Int[],
-        flow_mw = Float64[]
-    )
-    
-    for e in E, t in t_vals, o in o_vals
-        push!(results, ("existing", e, t, o, value(f[e, t, o])))
+    ts = isnothing(year) ? T : [year]
+    os = isnothing(hour) ? O : [hour]
+    df = DataFrame(type=String[], line_id=Int[], year=Int[], hour=Int[], flow_mw=Float64[])
+    for e in E, t in ts, o in os
+        push!(df, ("existing", e, t, o, value(f[e, t, o])))
     end
-    
-    for l in L, t in t_vals, o in o_vals
-        push!(results, ("candidate", l, t, o, value(fl[l, t, o])))
+    for l in L, t in ts, o in os
+        push!(df, ("candidate", l, t, o, value(fl[l, t, o])))
     end
-    
-    return results
+    df
 end
 
-function compute_cost_breakdown(model, config::TEPConfig, sets, params)
-    G, K, L, T, O = sets.G, sets.K, sets.L, sets.T, sets.O
-    α, ρ = sets.α, sets.ρ
+function cost_breakdown(model, cfg::TEPConfig, sets, params)
+    G, K, L, T, O = sets[:G], sets[:K], sets[:L], sets[:T], sets[:O]
+    α, ρ = sets[:α], sets[:ρ]
     pg, pk, pkmax, β = model[:pg], model[:pk], model[:pkmax], model[:β]
-    Pgcost, Pkcost, Pkinv, Flinv = params.Pgcost, params.Pkcost, params.Pkinv, params.Flinv
-    
-    # Operating costs by year
-    op_costs = DataFrame(year = Int[], existing_gen = Float64[], candidate_gen = Float64[], total_op = Float64[])
-    
+    pgcost, pkcost, pkinv, flinv = params.Pgcost, params.Pkcost, params.Pkinv, params.Flinv
+
+    op = DataFrame(year=Int[], existing_gen=Float64[], candidate_gen=Float64[], total_op=Float64[])
     for t in T
-        existing_cost = α[t] * sum(ρ[o] * sum(Pgcost[g] * value(pg[g, t, o]) for g in G) for o in O)
-        candidate_cost = α[t] * sum(ρ[o] * sum(Pkcost[k] * value(pk[k, t, o]) for k in K) for o in O)
-        push!(op_costs, (t, existing_cost, candidate_cost, existing_cost + candidate_cost))
+        existing = α[t] * sum(ρ[o] * sum(pgcost[g] * value(pg[g, t, o]) for g in G) for o in O)
+        candidate = α[t] * sum(ρ[o] * sum(pkcost[k] * value(pk[k, t, o]) for k in K) for o in O)
+        push!(op, (t, existing, candidate, existing + candidate))
     end
-    
-    # Investment costs by year
-    inv_costs = DataFrame(year = Int[], gen_inv = Float64[], line_inv = Float64[], total_inv = Float64[])
-    
+
+    inv = DataFrame(year=Int[], gen_inv=Float64[], line_inv=Float64[], total_inv=Float64[])
     for t in T
-        gen_cost = α[t] * sum(Pkinv[k] * value(pkmax[k, t]) for k in K)
-        line_cost = config.include_network ? α[t] * sum(Flinv[l] * value(β[l, t]) for l in L) : 0.0
-        push!(inv_costs, (t, gen_cost, line_cost, gen_cost + line_cost))
+        gen_cost = α[t] * sum(pkinv[k] * value(pkmax[k, t]) for k in K)
+        line_cost = cfg.include_network ? α[t] * sum(flinv[l] * value(β[l, t]) for l in L) : 0.0
+        push!(inv, (t, gen_cost, line_cost, gen_cost + line_cost))
     end
-    
-    # Total summary
-    total_op = sum(op_costs.total_op)
-    total_inv = sum(inv_costs.total_inv)
-    
-    summary = DataFrame(
-        category = ["Operating Cost", "Investment Cost", "Total Cost"],
-        value = [total_op, total_inv, total_op + total_inv]
-    )
-    
-    return (summary=summary, operating=op_costs, investment=inv_costs)
+
+    total_op = sum(op.total_op)
+    total_inv = sum(inv.total_inv)
+    summary = DataFrame(category=["Operating Cost", "Investment Cost", "Total Cost"], value=[total_op, total_inv, total_op + total_inv])
+    (summary=summary, operating=op, investment=inv)
 end
 
-# ==============================================================================
-# Save Results to Files
-function save_tgep_results(model, config::TEPConfig, sets, params, output_dir::String)
-    # Create output directory if it doesn't exist
-    mkpath(output_dir)
-    
-    # Extract and save all results
-    gen_dispatch = extract_generation_dispatch(model, sets, params)
-    CSV.write(joinpath(output_dir, "generation_dispatch.csv"), gen_dispatch)
-    
-    cap_inv = extract_capacity_investments(model, sets, params)
-    CSV.write(joinpath(output_dir, "capacity_investments.csv"), cap_inv)
-    
-    if config.include_network
-        line_inv = extract_line_investments(model, config, sets, params)
-        CSV.write(joinpath(output_dir, "line_investments.csv"), line_inv)
-        
-        line_flows = extract_line_flows(model, config, sets, params)
-        CSV.write(joinpath(output_dir, "line_flows.csv"), line_flows)
+function yearly_supply_demand(model, sets, params)
+    G, K, D, T, O = sets[:G], sets[:K], sets[:D], sets[:T], sets[:O]
+    ρ, pdf, pdg = sets[:ρ], sets[:Pdf], sets[:Pdg]
+    pg, pk, pd = model[:pg], model[:pk], params.Pd
+    gwh = 1.0 / 1000.0
+    df = DataFrame(year=Int[], demand_gwh=Float64[], existing_gen_gwh=Float64[], candidate_gen_gwh=Float64[], total_gen_gwh=Float64[], balance_gap_gwh=Float64[])
+    for t in T
+        demand = sum(ρ[o] * sum(pd[d] * pdf[o] * pdg[t] for d in D) for o in O)
+        existing = sum(ρ[o] * sum(value(pg[g, t, o]) for g in G) for o in O)
+        candidate = sum(ρ[o] * sum(value(pk[k, t, o]) for k in K) for o in O)
+        total = existing + candidate
+        push!(df, (t, demand * gwh, existing * gwh, candidate * gwh, total * gwh, (total - demand) * gwh))
     end
-    
-    costs = compute_cost_breakdown(model, config, sets, params)
-    CSV.write(joinpath(output_dir, "cost_summary.csv"), costs.summary)
-    CSV.write(joinpath(output_dir, "operating_costs.csv"), costs.operating)
-    CSV.write(joinpath(output_dir, "investment_costs.csv"), costs.investment)
-    
-    println("\n✓ Results saved to: $output_dir")
+    df
 end
 
-# ==============================================================================
-# Comprehensive Summary
-function summarize_tgep_results(model, config::TEPConfig, sets, params; save_to::Union{String,Nothing}=nothing)
-    println("\n" * "="^70)
-    println("TRANSMISSION AND GENERATION EXPANSION PLANNING - RESULTS SUMMARY")
-    println("="^70)
-    
-    # Cost breakdown
-    costs = compute_cost_breakdown(model, config, sets, params)
+function save_results(model, cfg::TEPConfig, sets, params, out_dir::String)
+    mkpath(out_dir)
+
+    # Core outputs used for post-analysis
+    CSV.write(joinpath(out_dir, "generation_dispatch.csv"), gen_dispatch_df(model, sets, params))
+    CSV.write(joinpath(out_dir, "capacity_investments.csv"), capacity_inv_df(model, sets, params))
+
+    if cfg.include_network
+        CSV.write(joinpath(out_dir, "line_investments.csv"), line_inv_df(model, cfg, sets, params))
+        CSV.write(joinpath(out_dir, "line_flows.csv"), line_flow_df(model, cfg, sets, params))
+    end
+
+    costs = cost_breakdown(model, cfg, sets, params)
+    CSV.write(joinpath(out_dir, "cost_summary.csv"), costs.summary)
+    CSV.write(joinpath(out_dir, "operating_costs.csv"), costs.operating)
+    CSV.write(joinpath(out_dir, "investment_costs.csv"), costs.investment)
+    println("\n✓ Results saved to: $out_dir")
+end
+
+function summarize_results(model, cfg::TEPConfig, sets, params; save_to::Union{String,Nothing}=nothing)
+    println("\n" * "="^50)
+    println("             TEGP - RESULTS SUMMARY")
+    println("="^50)
+
+    # Physics view: annual demand and supply split
+    yearly = yearly_supply_demand(model, sets, params)
+    fmt2(x) = Printf.@sprintf("%.2f", x)
+    fmtc(x) = replace(fmt2(x), r"(?<=\d)(?=(\d{3})+\.)" => ",")
+    fmtcol(x, w=12) = lpad(fmtc(x), w)
+    println("\n⚡ DEMAND AND GENERATION BY YEAR")
+    println("="^50)
+    println("Y  | Demand (GWh) | Ex gen (GWh) | Ca gen (GWh) | Total (GWh)  | Gap (GWh)")
+    for row in eachrow(yearly)
+        println("$(row.year)  | $(fmtcol(row.demand_gwh)) | $(fmtcol(row.existing_gen_gwh)) | $(fmtcol(row.candidate_gen_gwh)) | $(fmtcol(row.total_gen_gwh)) | $(fmtcol(row.balance_gap_gwh))")
+    end
+
+    costs = cost_breakdown(model, cfg, sets, params)
     println("\n📊 COST BREAKDOWN")
-    println("-" * "="^69)
+    println("="^50)
     for row in eachrow(costs.summary)
         println("  $(rpad(row.category, 20)): \$$(round(row.value, digits=2))")
     end
-    
-    # Capacity investments
-    cap_inv = extract_capacity_investments(model, sets, params)
-    total_cap = filter(row -> row.capacity_added_mw > 0.01, cap_inv)
-    
-    if nrow(total_cap) > 0
+
+    cap = capacity_inv_df(model, sets, params)
+    built_cap = filter(row -> row.capacity_added_mw > 0.01, cap)
+    if nrow(built_cap) > 0
         println("\n⚡ GENERATION CAPACITY INVESTMENTS")
-        println("-" * "="^69)
-        for row in eachrow(total_cap)
+        println("="^50)
+        for row in eachrow(built_cap)
             println("  Year $(row.year), Gen $(row.gen_id): $(round(row.capacity_added_mw, digits=2)) MW (\$$(round(row.investment_cost, digits=2)))")
         end
     end
-    
-    # Line investments
-    if config.include_network
-        line_inv = extract_line_investments(model, config, sets, params)
-        built_lines = filter(row -> row.built, line_inv)
-        
+
+    if cfg.include_network
+        line = line_inv_df(model, cfg, sets, params)
+        built_lines = filter(row -> row.built, line)
         if nrow(built_lines) > 0
             println("\n🔌 TRANSMISSION LINE INVESTMENTS")
-            println("-" * "="^69)
+            println("="^50)
             for row in eachrow(built_lines)
                 println("  Year $(row.year), Line $(row.line_id): Built (\$$(round(row.investment_cost, digits=2)))")
             end
@@ -212,54 +164,41 @@ function summarize_tgep_results(model, config::TEPConfig, sets, params; save_to:
             println("\n🔌 TRANSMISSION LINE INVESTMENTS: None")
         end
     end
-    
-    println("\n" * "="^70)
-    
-    # Save if requested
-    if !isnothing(save_to)
-        save_tgep_results(model, config, sets, params, save_to)
-    end
-    
-    return costs
+
+    !isnothing(save_to) && save_results(model, cfg, sets, params, save_to)
 end
 
-
-function report_tgep_solution(model, config::TEPConfig, sets, params)
-    G, K, L, E, T, O = sets.G, sets.K, sets.L, sets.E, sets.T, sets.O
+function report_solution(model, cfg::TEPConfig, sets, params)
+    G, K, L, E, T, O = sets[:G], sets[:K], sets[:L], sets[:E], sets[:T], sets[:O]
     pg, pk, pkmax, β = model[:pg], model[:pk], model[:pkmax], model[:β]
-    
-    tshow = last(T)
-    oshow = first(O)
-    
-    println("")
+    t, o = last(T), first(O)
 
-    println("Generation dispatch (t=$tshow, o=$oshow):")
+    println("")
+    println("Generation dispatch (t=$t, o=$o):")
     for g in G
-        println("  Gen $g: ", round(value(pg[g, tshow, oshow]), digits=2), " MW")
+        println("  Gen $g: ", round(value(pg[g, t, o]), digits=2), " MW")
     end
-    
-    println("Candidate generation (t=$tshow):")
+
+    println("Candidate generation (t=$t):")
     for k in K
-        cap = round(value(sum(pkmax[k, τ] for τ in 1:tshow)), digits=2)
-        dispatch = round(value(pk[k, tshow, oshow]), digits=2)
-        println("  Cand Gen $k: $dispatch MW (Capacity: $cap MW)")
+        cap = round(value(sum(pkmax[k, τ] for τ in 1:t)), digits=2)
+        disp = round(value(pk[k, t, o]), digits=2)
+        println("  Cand Gen $k: $disp MW (Capacity: $cap MW)")
     end
-    
-    if config.include_network
+
+    if cfg.include_network
         f, fl = model[:f], model[:fl]
-        
-        println("Line investments (t=$tshow):")
+        println("Line investments (t=$t):")
         for l in L
-            built = value(sum(β[l, τ] for τ in 1:tshow)) > 0.5
+            built = value(sum(β[l, τ] for τ in 1:t)) > 0.5
             println("  Line $l: ", built ? "Built" : "Not built")
         end
-        
-        println("Line flows (t=$tshow, o=$oshow):")
+        println("Line flows (t=$t, o=$o):")
         for e in E
-            println("  Existing Line $e: ", round(value(f[e, tshow, oshow]), digits=2), " MW")
+            println("  Existing Line $e: ", round(value(f[e, t, o]), digits=2), " MW")
         end
         for l in L
-            println("  Candidate Line $l: ", round(value(fl[l, tshow, oshow]), digits=2), " MW")
+            println("  Candidate Line $l: ", round(value(fl[l, t, o]), digits=2), " MW")
         end
     end
 end

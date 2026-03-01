@@ -18,25 +18,25 @@ include("../src/concrete/tgep_report.jl")
 DEFAULT_CONFIG = TEPConfig(
     true,               # network
     false,              # integers
-    false,               # per_unit
+    true,               # per_unit
     10e5,               # bigM
     Gurobi.Optimizer    # solver
 )
 SINGLE_NODE_CONFIG = TEPConfig(
     false,              # network
     false,              # integers
-    false,               # per_unit
+    false,              # per_unit
     10e5,               # bigM
     Gurobi.Optimizer    # solver
 )
 
 # ==============================================================================
 # Main Execution
-config = SINGLE_NODE_CONFIG
+config = DEFAULT_CONFIG
 
 pkg = "GridOpt.jl"
 data_path = joinpath(pwd(), pkg, "data", "planning")
-proj = "10nodeCan"
+proj = "PaCES"
 
 # Load data
 data = load_tgep_data(data_path, proj)
@@ -45,8 +45,7 @@ data = load_tgep_data(data_path, proj)
 model, sets, params = build_tgep_model(config, data)
 solve_tgep!(model, config, sets, params)
 
-# report_tgep_solution(model, config, sets, params)
+# report_solution(model, config, sets, params)
 save_path = joinpath(pwd(), pkg, "results", proj)
-summarize_tgep_results(model, config, sets, params; save_to=save_path)
-
-# report_tgep_solution(model, config, sets, params)
+summarize_results(model, config, sets, params; save_to=save_path)
+save_plots(model, config, sets, params, save_path)

@@ -1,10 +1,10 @@
-
+# src/concrete/constraints.jl
 # ==============================================================================
 # Add Generation Constraints
 function add_generation_constraints!(model, sets, params)
-    G, K, T, O = sets.G, sets.K, sets.T, sets.O
+    G, K, T, O = sets[:G], sets[:K], sets[:T], sets[:O]
     pg, pk, pkmax = model[:pg], model[:pk], model[:pkmax]
-    Pgmax, Pgmin, Pkmin, Pkmax = params.Pgmax, params.Pgmin, params.Pkmin, params.Pkmax
+    Pgmax, Pgmin, Pkmin, Pkmax = params[:Pgmax], params[:Pgmin], params[:Pkmin], params[:Pkmax]
     
     # Existing generator limits
     @constraint(model, [g in G, t in T, o in O], Pgmin[g] <= pg[g, t, o])
@@ -19,7 +19,7 @@ end
 # ==============================================================================
 # Add Investment Constraints
 function add_investment_constraints!(model, sets)
-    L, T = sets.L, sets.T
+    L, T = sets[:L], sets[:T]
     β = model[:β]
     
     # Line can be built at most once across all years
@@ -29,14 +29,14 @@ end
 # ==============================================================================
 # Add Network Constraints - Multi-Node with DC Power Flow
 function add_network_constraints!(model, config::TEPConfig, sets, params)
-    B, E, L, T, O = sets.B, sets.E, sets.L, sets.T, sets.O
-    G, K = sets.G, sets.K
-    Ωg, Ωk, Ωd = sets.Ωg, sets.Ωk, sets.Ωd
-    fr, to, frn, ton = sets.fr, sets.to, sets.frn, sets.ton
-    Pdf, Pdg = sets.Pdf, sets.Pdg
+    B, E, L, T, O = sets[:B], sets[:E], sets[:L], sets[:T], sets[:O]
+    G, K = sets[:G], sets[:K]
+    Ωg, Ωk, Ωd = sets[:Ωg], sets[:Ωk], sets[:Ωd]
+    fr, to, frn, ton = sets[:fr], sets[:to], sets[:frn], sets[:ton]
+    Pdf, Pdg = sets[:Pdf], sets[:Pdg]
     pg, pk = model[:pg], model[:pk]
     θ, f, fl, β = model[:θ], model[:f], model[:fl], model[:β]
-    xe, xl, Fmax, Fmaxl, Pd = params.xe, params.xl, params.Fmax, params.Fmaxl, params.Pd
+    xe, xl, Fmax, Fmaxl, Pd = params[:xe], params[:xl], params[:Fmax], params[:Fmaxl], params[:Pd]
     M = config.bigM
     
     # Power balance at each bus
@@ -68,12 +68,13 @@ end
 # ==============================================================================
 # Add Single Node Constraints - Copper Plate
 function add_single_node_constraints!(model, sets, params)
-    G, K, D, T, O = sets.G, sets.K, sets.D, sets.T, sets.O
+    G, K, D, T, O = sets[:G], sets[:K], sets[:D], sets[:T], sets[:O]
     pg, pk = model[:pg], model[:pk]
-    Pd = params.Pd
+    Pdf, Pdg = sets[:Pdf], sets[:Pdg]
+    Pd = params[:Pd]
     
     # Simple power balance: total generation = total load
     @constraint(model, demand[t in T, o in O],
-        sum(pg[g, t, o] for g in G) + sum(pk[k, t, o] for k in K) == sum(Pd[d] for d in D)
+        sum(pg[g, t, o] for g in G) + sum(pk[k, t, o] for k in K) == sum(Pd[d]*Pdf[o]*Pdg[t] for d in D)
     )
 end

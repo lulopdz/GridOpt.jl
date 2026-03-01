@@ -1,8 +1,8 @@
 # src/concrete/vars.jl
 function add_tgep_vars!(m, cfg::TEPConfig, sets)
-    G, K = sets.G, sets.K
-    E, L, B = sets.E, sets.L, sets.B 
-    T, O = sets.T, sets.O
+    G, K = sets[:G], sets[:K]
+    E, L, B = sets[:E], sets[:L], sets[:B] 
+    T, O = sets[:T], sets[:O]
     
     # Dispatch variables
     @variable(m, pg[g in G, t in T, o in O] >= 0)
@@ -23,9 +23,9 @@ function add_tgep_vars!(m, cfg::TEPConfig, sets)
 end
 
 function add_gep_vars!(m, cfg::TEPConfig, sets)
-    G, K = sets.G, sets.K
-    E, L, B = sets.E, sets.L, sets.B 
-    T, O = sets.T, sets.O
+    G, K = sets[:G], sets[:K]
+    E, L, B = sets[:E], sets[:L], sets[:B] 
+    T, O = sets[:T], sets[:O]
 
     # Dispatch variables
     @variable(m, pg[g in G, t in T, o in O] >= 0)

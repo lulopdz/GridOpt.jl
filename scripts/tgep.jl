@@ -19,14 +19,14 @@ DEFAULT_CONFIG = TEPConfig(
     true,               # network
     false,              # integers
     true,               # per_unit
-    10e5,               # bigM
+    10e6,               # bigM
     Gurobi.Optimizer    # solver
 )
 SINGLE_NODE_CONFIG = TEPConfig(
     false,              # network
     false,              # integers
     false,              # per_unit
-    10e5,               # bigM
+    10e6,               # bigM
     Gurobi.Optimizer    # solver
 )
 

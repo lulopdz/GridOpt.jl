@@ -10,6 +10,7 @@ function load_tgep_data(data_path::String, project::String)
         :gen => CSV.read(dfpath("gen"), DataFrame),
         :load => CSV.read(dfpath("load"), DataFrame),
         :line => CSV.read(dfpath("line"), DataFrame),
+        :tech => CSV.read(dfpath("tech"), DataFrame),
         # Candidate infrastructure
         :gcand => CSV.read(dfpath("gcand"), DataFrame),
         :tcand => CSV.read(dfpath("tcand"), DataFrame),

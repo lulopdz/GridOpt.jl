@@ -36,13 +36,6 @@ function process_tgep_sets(data)
     frn = Dict(l => Bmap[tcand.node_code_st[l]] for l in L)
     ton = Dict(l => Bmap[tcand.node_code_en[l]] for l in L)
     
-    # Scenario and time weights
-    ρ = Dict(O .=> sce.weight)
-    Pdf = Dict(O .=> sce.demand_factor)
-
-    Pdg = Dict(T .=> econ.demand_growth)
-    α = Dict(T .=> econ.a)
-    
     return Dict{Symbol, Any}(
         :B => B,
         :G => G,
@@ -59,9 +52,5 @@ function process_tgep_sets(data)
         :to => to,
         :frn => frn,
         :ton => ton,
-        :ρ => ρ,
-        :Pdf => Pdf,
-        :Pdg => Pdg,
-        :α => α,
     )
 end

@@ -5,14 +5,15 @@ function add_generation_constraints!(model, sets, params)
     G, K, T, O = sets[:G], sets[:K], sets[:T], sets[:O]
     pg, pk, pkmax = model[:pg], model[:pk], model[:pkmax]
     Pgmax, Pgmin, Pkmin, Pkmax = params[:Pgmax], params[:Pgmin], params[:Pkmin], params[:Pkmax]
+    Pgcf, Pkcf = params[:Pgcf], params[:Pkcf]
     
     # Existing generator limits
-    @constraint(model, [g in G, t in T, o in O], Pgmin[g] <= pg[g, t, o])
-    @constraint(model, [g in G, t in T, o in O], pg[g, t, o] <= Pgmax[g])
+    @constraint(model, [g in G, t in T, o in O], Pgmin[g] * Pgcf[(g, o)] <= pg[g, t, o])
+    @constraint(model, [g in G, t in T, o in O], pg[g, t, o] <= Pgmax[g] * Pgcf[(g, o)])
     
     # Candidate generator limits
-    @constraint(model, [k in K, t in T, o in O], Pkmin[k] <= pk[k, t, o])
-    @constraint(model, [k in K, t in T, o in O], pk[k, t, o] <= sum(pkmax[k, τ] for τ in 1:t))
+    @constraint(model, [k in K, t in T, o in O], Pkmin[k] * Pkcf[(k, o)] <= pk[k, t, o])
+    @constraint(model, [k in K, t in T, o in O], pk[k, t, o] <= sum(pkmax[k, τ] for τ in 1:t) * Pkcf[(k, o)])
     @constraint(model, [k in K, t in T], sum(pkmax[k, τ] for τ in 1:t) <= Pkmax[k])
 end
 
@@ -29,12 +30,12 @@ end
 # ==============================================================================
 # Add Network Constraints - Multi-Node with DC Power Flow
 function add_network_constraints!(model, config::TEPConfig, sets, params)
-    B, E, L, T, O = sets[:B], sets[:E], sets[:L], sets[:T], sets[:O]
+    B, D, E, L, T, O = sets[:B], sets[:D], sets[:E], sets[:L], sets[:T], sets[:O]
     G, K = sets[:G], sets[:K]
     Ωg, Ωk, Ωd = sets[:Ωg], sets[:Ωk], sets[:Ωd]
     fr, to, frn, ton = sets[:fr], sets[:to], sets[:frn], sets[:ton]
-    Pdf, Pdg = sets[:Pdf], sets[:Pdg]
-    pg, pk = model[:pg], model[:pk]
+    Pdf, Pdg = params[:Pdf], params[:Pdg]
+    pg, pk, ls = model[:pg], model[:pk], model[:ls]
     θ, f, fl, β = model[:θ], model[:f], model[:fl], model[:β]
     xe, xl, Fmax, Fmaxl, Pd = params[:xe], params[:xl], params[:Fmax], params[:Fmaxl], params[:Pd]
     M = config.bigM
@@ -43,9 +44,13 @@ function add_network_constraints!(model, config::TEPConfig, sets, params)
     @constraint(model, demand[b in B, t in T, o in O],
         sum(pg[g, t, o] for g in Ωg[b]) + sum(pk[k, t, o] for k in Ωk[b]) +
         sum(f[e, t, o] for e in E if to[e] == b)   - sum(f[e, t, o] for e in E if fr[e] == b) +
-        sum(fl[l, t, o] for l in L if ton[l] == b) - sum(fl[l, t, o] for l in L if frn[l] == b)
+        sum(fl[l, t, o] for l in L if ton[l] == b) - sum(fl[l, t, o] for l in L if frn[l] == b) +
+        sum(ls[d, t, o] for d in Ωd[b])
         == sum(Pd[d]*Pdf[o]*Pdg[t] for d in Ωd[b])
     )
+
+    # Load shedding cannot exceed demand
+    @constraint(model, [d in D, t in T, o in O], ls[d, t, o] <= Pd[d] * Pdf[o] * Pdg[t])
     
     # DC power flow for existing lines
     @constraint(model, [e in E, t in T, o in O], f[e, t, o] == (θ[fr[e], t, o] - θ[to[e], t, o]) / xe[e])
@@ -69,12 +74,14 @@ end
 # Add Single Node Constraints - Copper Plate
 function add_single_node_constraints!(model, sets, params)
     G, K, D, T, O = sets[:G], sets[:K], sets[:D], sets[:T], sets[:O]
-    pg, pk = model[:pg], model[:pk]
-    Pdf, Pdg = sets[:Pdf], sets[:Pdg]
+    pg, pk, ls = model[:pg], model[:pk], model[:ls]
+    Pdf, Pdg = params[:Pdf], params[:Pdg]
     Pd = params[:Pd]
     
     # Simple power balance: total generation = total load
     @constraint(model, demand[t in T, o in O],
-        sum(pg[g, t, o] for g in G) + sum(pk[k, t, o] for k in K) == sum(Pd[d]*Pdf[o]*Pdg[t] for d in D)
+        sum(pg[g, t, o] for g in G) + sum(pk[k, t, o] for k in K) + sum(ls[d, t, o] for d in D) == sum(Pd[d]*Pdf[o]*Pdg[t] for d in D)
     )
+
+    @constraint(model, [d in D, t in T, o in O], ls[d, t, o] <= Pd[d] * Pdf[o] * Pdg[t])
 end

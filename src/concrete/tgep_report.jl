@@ -1,6 +1,9 @@
 using Printf
 using Plots
 
+include("../utils/plot_defaults.jl")
+set_theme()
+
 function gen_dispatch_df(model, sets, params)
     G, K, T, O = sets[:G], sets[:K], sets[:T], sets[:O]
     pg, pk = model[:pg], model[:pk]
@@ -59,7 +62,7 @@ end
 
 function cost_breakdown(model, cfg::TEPConfig, sets, params)
     G, K, L, T, O = sets[:G], sets[:K], sets[:L], sets[:T], sets[:O]
-    α, ρ = sets[:α], sets[:ρ]
+    α, ρ = params[:α], params[:ρ]
     pg, pk, pkmax, β = model[:pg], model[:pk], model[:pkmax], model[:β]
     pgcost, pkcost, pkinv, flinv = params[:Pgcost], params[:Pkcost], params[:Pkinv], params[:Flinv]
 
@@ -85,7 +88,7 @@ end
 
 function yearly_supply_demand(model, sets, params)
     G, K, D, T, O = sets[:G], sets[:K], sets[:D], sets[:T], sets[:O]
-    ρ, pdf, pdg = sets[:ρ], sets[:Pdf], sets[:Pdg]
+    ρ, pdf, pdg = params[:ρ], params[:Pdf], params[:Pdg]
     pg, pk, pd = model[:pg], model[:pk], params[:Pd]
     gwh = 1.0 / 1000.0
     df = DataFrame(year=Int[], demand_gwh=Float64[], existing_gen_gwh=Float64[], candidate_gen_gwh=Float64[], total_gen_gwh=Float64[], balance_gap_gwh=Float64[])
@@ -99,30 +102,50 @@ function yearly_supply_demand(model, sets, params)
     df
 end
 
+function load_shedding_df(model, sets, params)
+    D, T, O = sets[:D], sets[:T], sets[:O]
+    Pd, Pdf, Pdg = params[:Pd], params[:Pdf], params[:Pdg]
+    ρ = get(params, :ρ, Dict(o => 1.0 for o in O))
+
+    ls = try
+        model[:ls]
+    catch
+        return DataFrame(load_id=Int[], year=Int[], hour=Int[], shed_mw=Float64[], demand_mw=Float64[], shed_pct=Float64[], weighted_shed_mwh=Float64[])
+    end
+
+    df = DataFrame(load_id=Int[], year=Int[], hour=Int[], shed_mw=Float64[], demand_mw=Float64[], shed_pct=Float64[], weighted_shed_mwh=Float64[])
+    for d in D, t in T, o in O
+        demand = Pd[d] * Pdf[o] * Pdg[t]
+        shed = value(ls[d, t, o])
+        shed_pct = demand > 0 ? 100.0 * shed / demand : 0.0
+        push!(df, (d, t, o, shed, demand, shed_pct, ρ[o] * shed))
+    end
+    df
+end
+
 function plot_capacity_and_demand(model, cfg::TEPConfig, sets, params; pdf_path::Union{String,Nothing}=nothing)
     G, K, D, T, O = sets[:G], sets[:K], sets[:D], sets[:T], sets[:O]
     pd, pgmax = params[:Pd], params[:Pgmax]
-    pdf, pdg = sets[:Pdf], sets[:Pdg]
+    pdf, pdg = params[:Pdf], params[:Pdg]
     pkmax = model[:pkmax]
     sb = cfg.per_unit ? 100.0 : 1.0
 
     years = collect(T)
     existing_cap_mw = [sum(pgmax[g] for g in G) * sb for _ in years]
     candidate_cap_mw = [sum(value(pkmax[k, τ]) for k in K for τ in years if τ <= t) * sb for t in years]
-    peak_demand_mw = [maximum(sum(pd[d] * pdf[o] * pdg[t] for d in D) * sb for o in O) for t in years]
+    peak_demand_mw = [maximum((sum(pd[d] * pdf[o] * pdg[t] for d in D) * sb for o in O); init=0.0) for t in years]
 
     combined = areaplot(
         years,
         seriestype=:bar,
-        [existing_cap_mw candidate_cap_mw ],
+        [existing_cap_mw candidate_cap_mw],
         label=["Existing Capacity" "Candidate Capacity"],
-        color=[:steelblue :darkorange],
+        color=[PLOT_COLORS.gray PLOT_COLORS.purple],
         xlabel="Years",
         ylabel="Capacity (MW)",
-        size=(800, 450),
-        leftmargin=3Plots.mm,
-        bottommargin=3Plots.mm,
-        yformatter = :plain,
+        yformatter=:plain,
+        lw = 0.0,
+        ylims=(0, maximum(existing_cap_mw) + maximum(candidate_cap_mw) * 1.2)
     )
 
     plot!(
@@ -132,7 +155,7 @@ function plot_capacity_and_demand(model, cfg::TEPConfig, sets, params; pdf_path:
         seriestype=:line,
         linewidth=3,
         marker=:circle,
-        color=:black,
+        color=PLOT_COLORS.green,
         label="Peak Demand"
     )
 
@@ -145,30 +168,73 @@ function plot_capacity_and_demand(model, cfg::TEPConfig, sets, params; pdf_path:
     return combined
 end
 
-function save_plots(model, cfg::TEPConfig, sets, params, out_dir::String)
-    mkpath(out_dir)
-    plot_capacity_and_demand(model, cfg, sets, params; pdf_path=joinpath(out_dir, "capacity_and_demand.pdf"))
-    # Additional plots can be generated and saved here
+function plot_new_capacity_by_type(model, cfg::TEPConfig, sets, params; pdf_path::Union{String,Nothing}=nothing)
+    K, T = sets[:K], sets[:T]
+    pktype = get(params, :Pktype, Dict{Any, Any}())
+    pkmax = model[:pkmax]
+    sb = cfg.per_unit ? 100.0 : 1.0
+
+    norm_type(x) = lowercase(strip(string(x)))
+    k_type(k) = norm_type(get(pktype, k, "other"))
+
+    years = collect(T)
+    types = sort(unique([k_type(k) for k in K]))
+    if isempty(types)
+        types = ["none"]
+    end
+
+    cap_by_type = Dict(
+        typ => [sum(value(pkmax[k, t]) for k in K if k_type(k) == typ) * sb / 1000.0 for t in years]
+        for typ in types
+    )
+    cap_matrix = hcat([cap_by_type[typ] for typ in types]...)
+    cap_labels = [typ == "none" ? "No Type" : typ for typ in types]
+
+    p = areaplot(
+        years,
+        cap_matrix,
+        xlabel="Year",
+        ylabel="New Capacity (GW)",
+        label=permutedims(cap_labels),
+        legend = :outertop,
+        seriestype = :bar,
+        yformatter=:plain,
+        lw = 0.0,
+        ylims=(0, maximum(sum(cap_matrix, dims=2)) * 1.5)
+    )
+
+    if !isnothing(pdf_path)
+        mkpath(dirname(pdf_path))
+        savefig(p, pdf_path)
+        println("✓ Plot saved to: $pdf_path")
+    end
+
+    return p
 end
 
-save_plots(model, config, sets, params, save_path)
+function save_plots(model, cfg::TEPConfig, sets, params, out_dir::String)
+    mkpath(out_dir * "/plots")
+    plot_capacity_and_demand(model, cfg, sets, params; pdf_path=joinpath(out_dir, "plots", "capacity_and_demand.pdf"))
+    plot_new_capacity_by_type(model, cfg, sets, params; pdf_path=joinpath(out_dir, "plots", "new_capacity_by_type.pdf"))
+end
 
 function save_results(model, cfg::TEPConfig, sets, params, out_dir::String)
     mkpath(out_dir)
-
+    mkpath(joinpath(out_dir, "csv"))
     # Core outputs used for post-analysis
-    CSV.write(joinpath(out_dir, "generation_dispatch.csv"), gen_dispatch_df(model, sets, params))
-    CSV.write(joinpath(out_dir, "capacity_investments.csv"), capacity_inv_df(model, sets, params))
+    CSV.write(joinpath(out_dir, "csv", "generation_dispatch.csv"), gen_dispatch_df(model, sets, params))
+    CSV.write(joinpath(out_dir, "csv", "capacity_investments.csv"), capacity_inv_df(model, sets, params))
+    CSV.write(joinpath(out_dir, "csv", "load_shedding.csv"), load_shedding_df(model, sets, params))
 
     if cfg.include_network
-        CSV.write(joinpath(out_dir, "line_investments.csv"), line_inv_df(model, cfg, sets, params))
-        CSV.write(joinpath(out_dir, "line_flows.csv"), line_flow_df(model, cfg, sets, params))
+        CSV.write(joinpath(out_dir, "csv", "line_investments.csv"), line_inv_df(model, cfg, sets, params))
+        CSV.write(joinpath(out_dir, "csv", "line_flows.csv"), line_flow_df(model, cfg, sets, params))
     end
 
     costs = cost_breakdown(model, cfg, sets, params)
-    CSV.write(joinpath(out_dir, "cost_summary.csv"), costs.summary)
-    CSV.write(joinpath(out_dir, "operating_costs.csv"), costs.operating)
-    CSV.write(joinpath(out_dir, "investment_costs.csv"), costs.investment)
+    CSV.write(joinpath(out_dir, "csv", "cost_summary.csv"), costs.summary)
+    CSV.write(joinpath(out_dir, "csv", "operating_costs.csv"), costs.operating)
+    CSV.write(joinpath(out_dir, "csv", "investment_costs.csv"), costs.investment)
 
     save_plots(model, cfg, sets, params, out_dir)
 

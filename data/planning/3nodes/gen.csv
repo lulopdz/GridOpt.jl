@@ -1,3 +1,4 @@
-id,node_code,region,latitude,longitude,gen_type,Pmin,capacity_mw,om_cost
-1,N1,N,10,15,gas,0,500,10
-2,N3,N,10,15,gas,0,500,100
+id,node_code,region,latitude,longitude,gen_type,capacity_mw
+1,N1,N,10,15,gas,500
+2,N3,N,10,15,gas,500
+3,N3,N,10,15,solar,500

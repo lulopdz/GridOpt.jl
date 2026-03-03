@@ -1,4 +1,0 @@
-id,node_code,region,latitude,longitude,gen_type,capacity_mw
-1,N1,N,10,15,gas,500
-2,N3,N,10,15,gas,500
-3,N3,N,10,15,solar,500

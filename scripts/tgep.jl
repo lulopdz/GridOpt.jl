@@ -18,7 +18,7 @@ include("../src/concrete/tgep_report.jl")
 DEFAULT_CONFIG = TEPConfig(
     true,               # network
     false,              # integers
-    true,               # per_unit
+    false,               # per_unit
     10e6,               # bigM
     Gurobi.Optimizer    # solver
 )
@@ -36,7 +36,7 @@ config = DEFAULT_CONFIG
 
 pkg = "GridOpt.jl"
 data_path = joinpath(pwd(), pkg, "data", "planning")
-proj = "PaCES"
+proj = "3nodes"
 
 # Load data
 data = load_tgep_data(data_path, proj)

@@ -8,6 +8,7 @@ function set_tgep_objective!(model, config::TEPConfig, sets, params)
     Pgfixed, Pkfixed = params[:Pgfixed], params[:Pkfixed]
     Ctax = params[:Ctax]
     Pgmax = params[:Pgmax]
+    Fmaxl = params[:Fmaxl]
     Sb = config.per_unit ? 100.0 : 1.0
     VoLL = params[:VoLL]
     
@@ -27,7 +28,7 @@ function set_tgep_objective!(model, config::TEPConfig, sets, params)
         inv_cost = Sb * sum(
             α[t] * (
                 sum(Pkinv[k] * sum(pkmax[k, τ] for τ in 1:t) for k in K) +
-                sum(Flinv[l] * sum(β[l, τ] for τ in 1:t) for l in L)
+                sum(Flinv[l] * Fmaxl[l] * sum(β[l, τ] for τ in 1:t) for l in L)
             ) for t in T
         )
     else
@@ -47,6 +48,7 @@ function set_tgep_objective!(model, config::TEPConfig, sets, params)
 
     # Carbon policy cost: $/tCO2 times annualized weighted emissions.
     carbon_cost = sum(α[t] * sum(ρ[o] * Ctax[t] * em[t, o] for o in O) for t in T)
+    # carbon_cost = 0 
     
     @objective(model, Min, op_cost + inv_cost + fixed_cost + carbon_cost)
 end

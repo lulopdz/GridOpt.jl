@@ -20,7 +20,8 @@ function process_tgep_params(data, config::TEPConfig)
     om_val(r)   = hasproperty(r, :om_cost) ? r.om_cost : get_tech_param(gtech, r.gen_type, :variable_om_costs)
     fom_val(r)  = hasproperty(r, :fixed_om_cost) ? r.fixed_om_cost : get_tech_param(gtech, r.gen_type, :fixed_om_costs)
     inv_val(r)  = hasproperty(r, :inv_cost) ? r.inv_cost : get_tech_param(gtech, r.gen_type, :capital_cost_CAD_MW_per_year)
-    em_val(r)   = hasproperty(r, :carbon_emissions) ? r.carbon_emissions : get_tech_param(gtech, r.gen_type, :carbon_emissions)
+    # Emission intensity is defined at the technology level (tCO2 per MWh).
+    em_val(r)   = get_tech_param(gtech, r.gen_type, :carbon_emissions)
 
     parse_float(x, default=0.0) = begin
         if ismissing(x)
@@ -30,29 +31,13 @@ function process_tgep_params(data, config::TEPConfig)
         return isnothing(y) ? default : y
     end
 
-    # Policy columns are optional in economic.csv.
-    econ_cols = Set(propertynames(econ))
-    pick_econ_col(candidates) = begin
-        for c in candidates
-            if c in econ_cols
-                return c
-            end
-        end
-        return nothing
-    end
-
-    carbon_tax_col = pick_econ_col((:carbon_tax, :c_tax, :co2_tax, :carbon_price, :carbon_cost))
-    emission_cap_col = pick_econ_col((:emission_cap, :emissions_cap, :co2_cap, :net_emission_cap, :emission_target))
-
     years = collect(econ.t)
-    ctax = isnothing(carbon_tax_col) ?
-        Dict(t => 0.0 for t in years) :
-        Dict(r.t => parse_float(r[carbon_tax_col], 0.0) for r in eachrow(econ))
+    ctax = Dict(r.t => parse_float(r.carbon_tax / PriceFactor, 0.0) for r in eachrow(econ))
 
     # If no cap trajectory is provided, enforce net-zero in final period only.
-    netzero_cap = isnothing(emission_cap_col) ?
-        Dict(t => (t == last(years) ? 0.0 : Inf) for t in years) :
-        Dict(r.t => parse_float(r[emission_cap_col], Inf) for r in eachrow(econ))
+    netzero_cap = hasproperty(econ, :emission_cap) ?
+        Dict(r.t => parse_float(r.emission_cap, Inf) for r in eachrow(econ)) :
+        Dict(t => (t == last(years) ? 0.0 : Inf) for t in years)
 
     return Dict{Symbol, Any}(
         # Existing Generators

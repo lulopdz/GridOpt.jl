@@ -38,10 +38,10 @@ function add_emissions_constraints!(model, cfg::TEPConfig, sets, params)
     caps_in = get(params, :NetZeroCap, Dict())
     caps = Dict(t => get(caps_in, t, Inf) for t in T)
     finite_cap_years = [t for t in T if isfinite(caps[t])]
-    sb = cfg.per_unit ? 100.0 : 1.0
+    Sb = cfg.per_unit ? 100.0 : 1.0
 
-    @constraint(model, [g in G, t in T, o in O], em_e[g, t, o] == Pgem[g] * sb * pg[g, t, o])
-    @constraint(model, [k in K, t in T, o in O], em_k[k, t, o] == Pkem[k] * sb * pk[k, t, o])
+    @constraint(model, [g in G, t in T, o in O], em_e[g, t, o] == Pgem[g] * Sb * pg[g, t, o])
+    @constraint(model, [k in K, t in T, o in O], em_k[k, t, o] == Pkem[k] * Sb * pk[k, t, o])
     @constraint(model, [t in T, o in O], em[t, o] == sum(em_e[g, t, o] for g in G) + sum(em_k[k, t, o] for k in K))
 
     # Annual weighted emissions must respect cap trajectory (defaults to final-year net-zero).

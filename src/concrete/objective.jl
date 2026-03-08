@@ -3,12 +3,16 @@
 function set_tgep_objective!(model, config::TEPConfig, sets, params)
     G, K, D, L, T, O = sets[:G], sets[:K], sets[:D], sets[:L], sets[:T], sets[:O]
     α, ρ = params[:α], params[:ρ]
-    pg, pk, ls, pkmax, β = model[:pg], model[:pk], model[:ls], model[:pkmax], model[:β]
+    pg, pk, ls, pkmax, β, em = model[:pg], model[:pk], model[:ls], model[:pkmax], model[:β], model[:em]
     Pgcost, Pkcost, Pkinv, Flinv = params[:Pgcost], params[:Pkcost], params[:Pkinv], params[:Flinv]
+    Pgfixed, Pkfixed = params[:Pgfixed], params[:Pkfixed]
+    Ctax = params[:Ctax]
+    Pgmax = params[:Pgmax]
+    Sb = config.per_unit ? 100.0 : 1.0
     VoLL = params[:VoLL]
     
     # Operating costs
-    op_cost = sum(
+    op_cost = Sb * sum(
         α[t] * sum(
             ρ[o] * (
                 sum(Pgcost[g] * pg[g, t, o] for g in G) +
@@ -20,15 +24,29 @@ function set_tgep_objective!(model, config::TEPConfig, sets, params)
     
     # Investment costs
     if config.include_network
-        inv_cost = sum(
+        inv_cost = Sb * sum(
             α[t] * (
-                sum(Pkinv[k] * pkmax[k, t] for k in K) +
-                sum(Flinv[l] * β[l, t] for l in L)
+                sum(Pkinv[k] * sum(pkmax[k, τ] for τ in 1:t) for k in K) +
+                sum(Flinv[l] * sum(β[l, τ] for τ in 1:t) for l in L)
             ) for t in T
         )
     else
-        inv_cost = sum(α[t] * sum(Pkinv[k] * pkmax[k, t] for k in K) for t in T)
+        inv_cost = Sb * sum(
+            α[t] * sum(Pkinv[k] * sum(pkmax[k, τ] for τ in 1:t) for k in K)
+            for t in T
+        )
     end
+
+    # Fixed annual costs
+    fixed_cost = Sb * sum(
+        α[t] * (
+            sum(Pgfixed[g] * Pgmax[g] for g in G) +
+            sum(Pkfixed[k] * sum(pkmax[k, τ] for τ in 1:t) for k in K)
+        ) for t in T
+    )
+
+    # Carbon policy cost: $/tCO2 times annualized weighted emissions.
+    carbon_cost = sum(α[t] * sum(ρ[o] * Ctax[t] * em[t, o] for o in O) for t in T)
     
-    @objective(model, Min, op_cost + inv_cost)
+    @objective(model, Min, op_cost + inv_cost + fixed_cost + carbon_cost)
 end

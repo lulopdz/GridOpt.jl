@@ -28,6 +28,8 @@ function build_tgep_model(config::TEPConfig, data)
     else
         add_single_node_constraints!(model, sets, params)
     end
+
+    add_emissions_constraints!(model, config, sets, params)
     
     # Set objective
     set_tgep_objective!(model, config, sets, params)

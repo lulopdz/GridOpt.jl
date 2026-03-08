@@ -8,6 +8,11 @@ function add_tgep_vars!(m, cfg::TEPConfig, sets)
     @variable(m, pg[g in G, t in T, o in O] >= 0)
     @variable(m, pk[k in K, t in T, o in O] >= 0)
     @variable(m, ls[d in D, t in T, o in O] >= 0)
+
+    # Emissions accounting variables (tCO2/h representative block).
+    @variable(m, em_e[g in G, t in T, o in O])
+    @variable(m, em_k[k in K, t in T, o in O])
+    @variable(m, em[t in T, o in O])
     
     # Investment variables
     @variable(m, pkmax[k in K, t in T] >= 0)

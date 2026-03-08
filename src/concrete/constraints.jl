@@ -28,6 +28,29 @@ function add_investment_constraints!(model, sets)
 end
 
 # ==============================================================================
+# Add Emissions Constraints and Net-Zero Policy
+function add_emissions_constraints!(model, cfg::TEPConfig, sets, params)
+    G, K, T, O = sets[:G], sets[:K], sets[:T], sets[:O]
+    pg, pk = model[:pg], model[:pk]
+    em_e, em_k, em = model[:em_e], model[:em_k], model[:em]
+    ρ = params[:ρ]
+    Pgem, Pkem = params[:Pgem], params[:Pkem]
+    caps_in = get(params, :NetZeroCap, Dict())
+    caps = Dict(t => get(caps_in, t, Inf) for t in T)
+    finite_cap_years = [t for t in T if isfinite(caps[t])]
+    sb = cfg.per_unit ? 100.0 : 1.0
+
+    @constraint(model, [g in G, t in T, o in O], em_e[g, t, o] == Pgem[g] * sb * pg[g, t, o])
+    @constraint(model, [k in K, t in T, o in O], em_k[k, t, o] == Pkem[k] * sb * pk[k, t, o])
+    @constraint(model, [t in T, o in O], em[t, o] == sum(em_e[g, t, o] for g in G) + sum(em_k[k, t, o] for k in K))
+
+    # Annual weighted emissions must respect cap trajectory (defaults to final-year net-zero).
+    if !isempty(finite_cap_years)
+        @constraint(model, [t in finite_cap_years], sum(ρ[o] * em[t, o] for o in O) <= caps[t])
+    end
+end
+
+# ==============================================================================
 # Add Network Constraints - Multi-Node with DC Power Flow
 function add_network_constraints!(model, config::TEPConfig, sets, params)
     B, D, E, L, T, O = sets[:B], sets[:D], sets[:E], sets[:L], sets[:T], sets[:O]

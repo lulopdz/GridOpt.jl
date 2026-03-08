@@ -9,10 +9,8 @@ function capacity_inv_df(model, sets, params)
     K, T = sets[:K], sets[:T]
     pkmax, pkinv = model[:pkmax], params[:Pkinv]
     
-    # 1. Build base dataframe
     df = DataFrame([(; gen_id=k, year=t, capacity_added_mw=value(pkmax[k, t])) for k in K, t in T][:])
     
-    # 2. Add calculated columns using DataFrames operations
     sort!(df, [:gen_id, :year])
     transform!(groupby(df, :gen_id), :capacity_added_mw => cumsum => :cumulative_capacity_mw)
     df.investment_cost = df.capacity_added_mw .* [pkinv[k] for k in df.gen_id]
@@ -78,25 +76,47 @@ function cost_breakdown(model, cfg::TEPConfig, sets, params)
     G, K, L, T, O = sets[:G], sets[:K], sets[:L], sets[:T], sets[:O]
     α, ρ = params[:α], params[:ρ]
     pgcost, pkcost, pkinv, flinv = params[:Pgcost], params[:Pkcost], params[:Pkinv], params[:Flinv]
+    pgfixed, pkfixed = params[:Pgfixed], params[:Pkfixed]
+    pgmax = params[:Pgmax]
+    ctax = get(params, :Ctax, Dict(t => 0.0 for t in T))
+    sb = cfg.per_unit ? 100.0 : 1.0
+    has_em = haskey(model, :em)
 
     op = DataFrame([(; 
         year = t,
-        existing_gen = α[t] * sum(ρ[o] * pgcost[g] * value(model[:pg][g, t, o]) for g in G, o in O),
-        candidate_gen = α[t] * sum(ρ[o] * pkcost[k] * value(model[:pk][k, t, o]) for k in K, o in O)
+        existing_gen = sb * α[t] * sum(ρ[o] * pgcost[g] * value(model[:pg][g, t, o]) for g in G, o in O),
+        candidate_gen = sb * α[t] * sum(ρ[o] * pkcost[k] * value(model[:pk][k, t, o]) for k in K, o in O),
+        load_shed = sb * α[t] * sum(ρ[o] * params[:VoLL][d] * value(model[:ls][d, t, o]) for d in sets[:D], o in O)
     ) for t in T])
-    op.total_op = op.existing_gen .+ op.candidate_gen
+    op.total_op = op.existing_gen .+ op.candidate_gen .+ op.load_shed
 
     inv = DataFrame([(;
         year = t,
-        gen_inv = α[t] * sum(pkinv[k] * value(model[:pkmax][k, t]) for k in K),
-        line_inv = cfg.include_network ? α[t] * sum(flinv[l] * value(model[:β][l, t]) for l in L) : 0.0
+        gen_inv = sb * α[t] * sum(pkinv[k] * sum(value(model[:pkmax][k, τ]) for τ in 1:t) for k in K),
+        line_inv = cfg.include_network ? sb * α[t] * sum(flinv[l] * sum(value(model[:β][l, τ]) for τ in 1:t) for l in L) : 0.0
     ) for t in T])
     inv.total_inv = inv.gen_inv .+ inv.line_inv
 
+    fixed = DataFrame([(; 
+        year = t,
+        existing_fixed = sb * α[t] * sum(pgfixed[g] * pgmax[g] for g in G),
+        candidate_fixed = sb * α[t] * sum(pkfixed[k] * sum(value(model[:pkmax][k, τ]) for τ in 1:t) for k in K)
+    ) for t in T])
+    fixed.total_fixed = fixed.existing_fixed .+ fixed.candidate_fixed
+
+    carbon = DataFrame([(; 
+        year = t,
+        carbon_cost = has_em ? α[t] * sum(ρ[o] * ctax[t] * value(model[:em][t, o]) for o in O) : 0.0
+    ) for t in T])
+
     total_op, total_inv = sum(op.total_op), sum(inv.total_inv)
-    summary = DataFrame(category=["Operating Cost", "Investment Cost", "Total Cost"], value=[total_op, total_inv, total_op + total_inv])
+    total_fixed, total_carbon = sum(fixed.total_fixed), sum(carbon.carbon_cost)
+    summary = DataFrame(
+        category=["Operating Cost", "Investment Cost", "Fixed O&M Cost", "Carbon Cost", "Total Cost"],
+        value=[total_op, total_inv, total_fixed, total_carbon, total_op + total_inv + total_fixed + total_carbon]
+    )
     
-    return (summary=summary, operating=op, investment=inv)
+    return (summary=summary, operating=op, investment=inv, fixed=fixed, carbon=carbon)
 end
 
 function yearly_supply_demand(model, sets, params)
@@ -133,6 +153,8 @@ function save_results(model, cfg::TEPConfig, sets, params, out_dir::String)
     CSV.write(joinpath(out_dir, "csv", "cost_summary.csv"), costs.summary)
     CSV.write(joinpath(out_dir, "csv", "operating_costs.csv"), costs.operating)
     CSV.write(joinpath(out_dir, "csv", "investment_costs.csv"), costs.investment)
+    CSV.write(joinpath(out_dir, "csv", "fixed_costs.csv"), costs.fixed)
+    CSV.write(joinpath(out_dir, "csv", "carbon_costs.csv"), costs.carbon)
 
     println("\n✓ Results saved to: $out_dir")
 end
@@ -209,8 +231,8 @@ function plot_cap_dem(model, cfg::TEPConfig, sets, params; pdf_path::Union{Strin
         seriestype=:bar,
         label=["Ex Cap" "Cand Cap"],
         color=[PLOT_COLORS.gray PLOT_COLORS.purple],
-        bar_position=:stack, lw=0,
-        xlabel="Years", ylabel="Cap (MW)", yformatter=:plain,
+        lw=0, yformatter=:plain,
+        xlabel="Years", ylabel="Cap (MW)", 
         ylims=(0, (maximum(ex_cap) + maximum(cand_cap)) * 1.5)
     )
 
@@ -248,8 +270,9 @@ function plot_cap_type(model, cfg::TEPConfig, sets, params; pdf_path::Union{Stri
         yrs, cap_mat,
         seriestype=:bar,
         label=lbls,
-        bar_position=:stack, legend=:outertop, lw=0,
-        xlabel="Years", ylabel="New Cap (GW)", yformatter=:plain,
+        lw=0, yformatter=:plain,
+        legend=:outertop, 
+        xlabel="Years", ylabel="New Cap (GW)", 
         ylims=(0, maximum(sum(cap_mat, dims=2); init=0.0) * 1.5)
     )
 
@@ -292,10 +315,10 @@ function plot_total_cap_type(model, cfg::TEPConfig, sets, params; pdf_path::Unio
         yrs, cap_mat,
         seriestype=:bar,
         label=lbls,
-        bar_position=:stack, 
-        legend=:outertop, lw=0,
+        lw=0, yformatter=:plain,
+        legend=:outertop,
         legendcolumns=4,
-        xlabel="Year", ylabel="Total Capacity (GW)", yformatter=:plain,
+        xlabel="Year", ylabel="Total Capacity (GW)",
         ylims=(0, maximum(sum(cap_mat, dims=2); init=0.0) * 1.2)
     )
 
@@ -322,21 +345,30 @@ function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Uni
     pdf, pdg = params[:Pdf], params[:Pdg]
     lbls = permutedims([typ == "none" ? "N/A" : typ for typ in typs])
 
+    # Group generators once by type to avoid repeated filtering in hourly loops.
+    g_by_typ = Dict(typ => [g for g in G if gtyp(g) == typ] for typ in typs)
+    k_by_typ = Dict(typ => [k for k in K if ktyp(k) == typ] for typ in typs)
+
+    # Hourly demand profile (without yearly growth) is reused for every year.
+    demand_base = [sum(params[:Pd][d] * pdf[o] for d in D; init=0.0) * sb for o in hrs]
+
     plots = Dict{Any, Any}()
+    y_max = maximum(demand_base; init=0.0) * maximum(values(pdg); init=1.0) * 1.2
+
+    if !isnothing(pdf_path)
+        mkpath(dirname(pdf_path))
+    end
 
     for t in T
         disp_mat = [
             (
-                sum((value(model[:pg][g, t, o]) for g in G if gtyp(g) == typ); init=0.0) +
-                sum((value(model[:pk][k, t, o]) for k in K if ktyp(k) == typ); init=0.0)
+                sum((value(model[:pg][g, t, o]) for g in g_by_typ[typ]); init=0.0) +
+                sum((value(model[:pk][k, t, o]) for k in k_by_typ[typ]); init=0.0)
             ) * sb
             for o in hrs, typ in typs
         ]
 
-        dem = [
-            sum(params[:Pd][d] * pdf[o] * pdg[t] for d in D; init=0.0) * sb
-            for o in hrs
-        ]
+        dem = [demand_base[i] * pdg[t] for i in eachindex(hrs)]
 
         p = areaplot(
             hrs, disp_mat,
@@ -344,7 +376,7 @@ function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Uni
             legend=:outertop, lw=0,
             legendcolumns=4,
             xlabel="Hour", ylabel="Dispatch (MW)", yformatter=:plain,
-            ylims=(0, maximum(sum(disp_mat, dims=2); init=0.0) * 1.2)
+            ylims=(0, y_max)
         )
 
         plot!(
@@ -363,7 +395,6 @@ function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Uni
         plots[t] = p
     end
 
-    return plots
 end
 
 function save_plots(model, cfg::TEPConfig, sets, params, dir::String)

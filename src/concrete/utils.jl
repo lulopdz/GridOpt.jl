@@ -25,11 +25,12 @@ end
 # ==============================================================================
 # Parameter Processing
 function get_tech_param(gtech::DataFrame, gen_type, col::Symbol; default=0.0)
-    if isempty(gtech) || !(col in names(gtech)) || ismissing(gen_type)
+    if isempty(gtech) || !(col in propertynames(gtech)) || ismissing(gen_type)
         return default
     end
     # Find the row for this tech type
-    idx = findfirst(==(String(gen_type)), string.(gtech.gen_type))
+    target = lowercase(strip(String(gen_type)))
+    idx = findfirst(==(target), lowercase.(strip.(string.(gtech.gen_type))))
     isnothing(idx) && return default
     
     val = gtech[idx, col]

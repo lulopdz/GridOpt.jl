@@ -36,7 +36,8 @@ config = DEFAULT_CONFIG
 
 pkg = "GridOpt.jl"
 data_path = joinpath(pwd(), pkg, "data", "planning")
-proj = "3nodes"
+proj = "10nodes"
+print("Test git hub")
 
 # Load data
 data = load_tgep_data(data_path, proj)

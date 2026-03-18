@@ -12,6 +12,7 @@ include("../src/concrete/tgep_report.jl")
 GEP_CONFIG = TEPConfig(
     false,           # include_network: false para GEP 
     false,           # use_integer
+    false,           # enforce_netzero
     true,            # per_unit
     10e3,            # bigM
     Gurobi.Optimizer # solver

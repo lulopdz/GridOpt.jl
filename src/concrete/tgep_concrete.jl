@@ -29,7 +29,9 @@ function build_tgep_model(config::TEPConfig, data)
         add_single_node_constraints!(model, sets, params)
     end
 
-    add_emissions_constraints!(model, config, sets, params)
+    if config.enforce_netzero
+        add_emissions_constraints!(model, config, sets, params)
+    end
     
     # Set objective
     set_tgep_objective!(model, config, sets, params)

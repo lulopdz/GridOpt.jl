@@ -48,7 +48,7 @@ function set_tgep_objective!(model, config::TEPConfig, sets, params)
 
     # Carbon policy cost: $/tCO2 times annualized weighted emissions.
     carbon_cost = sum(α[t] * sum(ρ[o] * Ctax[t] * em[t, o] for o in O) for t in T)
-    # carbon_cost = 0 
+    carbon_cost = 0
     
     @objective(model, Min, op_cost + inv_cost + fixed_cost + carbon_cost)
 end

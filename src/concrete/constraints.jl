@@ -8,11 +8,11 @@ function add_generation_constraints!(model, sets, params)
     Pgcf, Pkcf = params[:Pgcf], params[:Pkcf]
     
     # Existing generator limits
-    @constraint(model, [g in G, t in T, o in O], Pgmin[g] * Pgcf[(g, o)] <= pg[g, t, o])
+    @constraint(model, [g in G, t in T, o in O], Pgmin[g] * Pgmax[g] <= pg[g, t, o])
     @constraint(model, [g in G, t in T, o in O], pg[g, t, o] <= Pgmax[g] * Pgcf[(g, o)])
     
     # Candidate generator limits
-    @constraint(model, [k in K, t in T, o in O], Pkmin[k] * Pkcf[(k, o)] <= pk[k, t, o])
+    @constraint(model, [k in K, t in T, o in O], Pkmin[k] * sum(pkmax[k, τ] for τ in 1:t) <= pk[k, t, o])
     @constraint(model, [k in K, t in T, o in O], pk[k, t, o] <= sum(pkmax[k, τ] for τ in 1:t) * Pkcf[(k, o)])
     @constraint(model, [k in K, t in T], sum(pkmax[k, τ] for τ in 1:t) <= Pkmax[k])
 end

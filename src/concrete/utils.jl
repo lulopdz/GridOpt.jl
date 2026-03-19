@@ -45,6 +45,26 @@ function get_tech_param(gtech::DataFrame, gen_type, col::Symbol; default=0.0)
     return isnothing(parsed) ? default : parsed
 end
 
+function get_line_tech_param(ttech::DataFrame, line_type, col::Symbol; default=0.0)
+    if isempty(ttech) || !(col in propertynames(ttech)) || !(:line_type in propertynames(ttech)) || ismissing(line_type)
+        return default
+    end
+    target = lowercase(strip(String(line_type)))
+    idx = findfirst(==(target), lowercase.(strip.(string.(ttech.line_type))))
+    isnothing(idx) && return default
+
+    val = ttech[idx, col]
+    if ismissing(val)
+        return default
+    end
+    sval = strip(lowercase(string(val)))
+    if sval in ("", "n/a", "na", "null", "missing")
+        return default
+    end
+    parsed = tryparse(Float64, string(val))
+    return isnothing(parsed) ? default : parsed
+end
+
 function get_cf(gen_type, hour, wind_cf_dict, solar_cf_dict)
     ismissing(gen_type) && return 1.0
     gtype = lowercase(String(gen_type))

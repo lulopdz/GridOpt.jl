@@ -13,7 +13,9 @@ function capacity_inv_df(model, sets, params)
     
     sort!(df, [:gen_id, :year])
     transform!(groupby(df, :gen_id), :capacity_added_mw => cumsum => :cumulative_capacity_mw)
-    df.investment_cost = df.capacity_added_mw .* [pkinv[k] for k in df.gen_id]
+    # Annual payment stream: once built, capacity keeps incurring investment cost in later years.
+    df.annual_investment_cost = df.capacity_added_mw .* [pkinv[k] for k in df.gen_id]
+    df.investment_cost = df.cumulative_capacity_mw .* [pkinv[k] for k in df.gen_id]
     
     return df
 end
@@ -22,9 +24,13 @@ function line_inv_df(model, cfg::TEPConfig, sets, params)
     cfg.include_network || return DataFrame()
     L, T = sets[:L], sets[:T]
     β, flinv = model[:β], params[:Flinv]
+    Fmaxl = params[:Fmaxl]
     
     df = DataFrame([(; line_id=l, year=t, built=(value(β[l, t]) > 0.5)) for l in L, t in T][:])
-    df.investment_cost = [b ? flinv[l] : 0.0 for (b, l) in zip(df.built, df.line_id)]
+    sort!(df, [:line_id, :year])
+    transform!(groupby(df, :line_id), :built => (x -> cumsum(Int.(x)) .> 0) => :active)
+    df.annual_investment_cost = [b ? flinv[l] * Fmaxl[l] : 0.0 for (b, l) in zip(df.built, df.line_id)]
+    df.investment_cost = [a ? flinv[l] * Fmaxl[l] : 0.0 for (a, l) in zip(df.active, df.line_id)]
     
     return df
 end
@@ -76,6 +82,7 @@ function cost_breakdown(model, cfg::TEPConfig, sets, params)
     G, K, L, T, O = sets[:G], sets[:K], sets[:L], sets[:T], sets[:O]
     α, ρ = params[:α], params[:ρ]
     pgcost, pkcost, pkinv, flinv = params[:Pgcost], params[:Pkcost], params[:Pkinv], params[:Flinv]
+    fmaxl = params[:Fmaxl]
     pgfixed, pkfixed = params[:Pgfixed], params[:Pkfixed]
     pgmax = params[:Pgmax]
     ctax = get(params, :Ctax, Dict(t => 0.0 for t in T))
@@ -93,7 +100,7 @@ function cost_breakdown(model, cfg::TEPConfig, sets, params)
     inv = DataFrame([(;
         year = t,
         gen_inv = sb * α[t] * sum(pkinv[k] * sum(value(model[:pkmax][k, τ]) for τ in 1:t) for k in K),
-        line_inv = cfg.include_network ? sb * α[t] * sum(flinv[l] * sum(value(model[:β][l, τ]) for τ in 1:t) for l in L) : 0.0
+        line_inv = cfg.include_network ? sb * α[t] * sum(flinv[l] * fmaxl[l] * sum(value(model[:β][l, τ]) for τ in 1:t) for l in L) : 0.0
     ) for t in T])
     inv.total_inv = inv.gen_inv .+ inv.line_inv
 

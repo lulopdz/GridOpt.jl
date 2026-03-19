@@ -20,6 +20,7 @@ function process_tgep_params(data, config::TEPConfig)
     om_val(r)   = hasproperty(r, :om_cost) ? r.om_cost : get_tech_param(gtech, r.gen_type, :variable_om_costs)
     fom_val(r)  = hasproperty(r, :fixed_om_cost) ? r.fixed_om_cost : get_tech_param(gtech, r.gen_type, :fixed_om_costs)
     inv_val(r)  = hasproperty(r, :inv_cost) ? r.inv_cost : get_tech_param(gtech, r.gen_type, :capital_cost_CAD_MW_per_year)
+    line_inv_val(r) = hasproperty(r, :inv_cost) ? r.inv_cost : get_line_tech_param(ttech, r.line_type, :annualized_project_costs_CAD_per_MWyear)
     # Emission intensity is defined at the technology level (tCO2 per MWh).
     em_val(r)   = get_tech_param(gtech, r.gen_type, :carbon_emissions)
 
@@ -67,7 +68,7 @@ function process_tgep_params(data, config::TEPConfig)
         :xe    => Dict(r.id => r.reactance / (config.per_unit ? (r.voltage^2 / Sb) : 1.0) for r in eachrow(line)),
         
         :Fmaxl => Dict(tcand.id .=> tcand.ttc_mw ./ Sb),
-        :Flinv => Dict(tcand.id .=> tcand.inv_cost ./ PriceFactor),
+        :Flinv => Dict(r.id => line_inv_val(r) / PriceFactor for r in eachrow(tcand)),
         :xl    => Dict(r.id => r.reactance / (config.per_unit ? (r.voltage^2 / Sb) : 1.0) for r in eachrow(tcand)),
 
         # Economic / Temporal

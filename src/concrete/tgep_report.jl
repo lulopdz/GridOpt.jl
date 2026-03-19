@@ -343,7 +343,9 @@ function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Uni
     typs = sort(unique(vcat(gtyp.(G), ktyp.(K))))
     isempty(typs) && (typs = ["none"])
     pdf, pdg = params[:Pdf], params[:Pdg]
-    lbls = permutedims([typ == "none" ? "N/A" : typ for typ in typs])
+    stack_labels = [typ == "none" ? "N/A" : typ for typ in typs]
+    push!(stack_labels, "Load Shed")
+    lbls = permutedims(stack_labels)
 
     # Group generators once by type to avoid repeated filtering in hourly loops.
     g_by_typ = Dict(typ => [g for g in G if gtyp(g) == typ] for typ in typs)
@@ -360,7 +362,7 @@ function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Uni
     end
 
     for t in T
-        disp_mat = [
+        disp_core = [
             (
                 sum((value(model[:pg][g, t, o]) for g in g_by_typ[typ]); init=0.0) +
                 sum((value(model[:pk][k, t, o]) for k in k_by_typ[typ]); init=0.0)
@@ -369,6 +371,8 @@ function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Uni
         ]
 
         dem = [demand_base[i] * pdg[t] for i in eachindex(hrs)]
+        shed = [sum(value(model[:ls][d, t, o]) for d in D; init=0.0) * sb for o in hrs]
+        disp_mat = hcat(disp_core, shed)
 
         p = areaplot(
             hrs, disp_mat,
@@ -397,6 +401,51 @@ function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Uni
 
 end
 
+function plot_emissions_by_type(model, cfg::TEPConfig, sets, params; pdf_path::Union{String,Nothing}=nothing)
+    haskey(model, :em_e) || return nothing
+    
+    G, K, T, O = sets[:G], sets[:K], sets[:T], sets[:O]
+    ρ = params[:ρ]
+    yrs = collect(T)
+
+    pgtype = get(params, :Pgtype, Dict())
+    pktype = get(params, :Pktype, Dict())
+    
+    gtyp(g) = lowercase(strip(string(get(pgtype, g, "other"))))
+    ktyp(k) = lowercase(strip(string(get(pktype, k, "other"))))
+    
+    typs = sort(unique(vcat(gtyp.(G), ktyp.(K))))
+    isempty(typs) && (typs = ["none"])
+    
+    em_e, em_k = model[:em_e], model[:em_k]
+
+    # Yearly emissions by type: sum across hours weighted by representative hour weight ρ
+    em_mat = [
+        sum((ρ[o] * value(em_e[g, t, o]) for g in G if gtyp(g) == typ for o in O); init=0.0) +
+        sum((ρ[o] * value(em_k[k, t, o]) for k in K if ktyp(k) == typ for o in O); init=0.0)
+        for t in yrs, typ in typs
+    ]
+
+    lbls = permutedims([t == "none" ? "N/A" : t for t in typs])
+
+    p = areaplot(
+        yrs, em_mat / 1e6,  # Convert to MtCO2
+        seriestype=:bar,
+        label=lbls,
+        lw=0, yformatter=:plain,
+        legend=:outertop,
+        legendcolumns=4,
+        xlabel="Year", ylabel="Emissions (MtCO2)",
+        ylims=(0, maximum(sum(em_mat, dims=2); init=0.0) / 1e6 * 1.2)
+    )
+
+    if !isnothing(pdf_path)
+        mkpath(dirname(pdf_path))
+        savefig(p, pdf_path)
+        println("✓ Saved: $pdf_path")
+    end
+end
+
 function save_plots(model, cfg::TEPConfig, sets, params, dir::String)
     println("\nSaving plots...")
     pdir = joinpath(dir, "plots")
@@ -405,6 +454,7 @@ function save_plots(model, cfg::TEPConfig, sets, params, dir::String)
     plot_cap_dem(model, cfg, sets, params; pdf_path=joinpath(pdir, "cap_dem.pdf"))
     plot_cap_type(model, cfg, sets, params; pdf_path=joinpath(pdir, "cap_type.pdf"))
     plot_total_cap_type(model, cfg, sets, params; pdf_path=joinpath(pdir, "total_cap_type.pdf"))
+    plot_emissions_by_type(model, cfg, sets, params; pdf_path=joinpath(pdir, "emissions_by_type.pdf"))
     plot_hourly_dispatch(model, cfg, sets, params; pdf_path=joinpath(pdir, "hourly_dispatch.pdf"))
 end
 

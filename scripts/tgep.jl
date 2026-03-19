@@ -16,9 +16,9 @@ include("../src/concrete/tgep_report.jl")
 # ==============================================================================
 # Default configurations
 DEFAULT_CONFIG = TEPConfig(
-    false,               # network
+    true,               # network
     false,              # integers
-    true,               # enforce_netzero
+    false,               # enforce_netzero
     false,               # per_unit
     10e6,               # bigM
     Gurobi.Optimizer    # solver

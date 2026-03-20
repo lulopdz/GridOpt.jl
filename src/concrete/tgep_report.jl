@@ -5,11 +5,11 @@ using DataFrames, CSV
 include("../utils/plot_defaults.jl")
 set_theme()
 
-function capacity_inv_df(model, sets, params)
+function capacity_inv_df(model, cfg::TEPConfig, sets, params)
     K, T = sets[:K], sets[:T]
     pkmax, pkinv = model[:pkmax], params[:Pkinv]
-    
-    df = DataFrame([(; gen_id=k, year=t, capacity_added_mw=value(pkmax[k, t])) for k in K, t in T][:])
+    Sb = cfg.per_unit ? 100.0 : 1.0
+    df = DataFrame([(; gen_id=k, year=t, capacity_added_mw= Sb * value(pkmax[k, t])) for k in K, t in T][:])
     
     sort!(df, [:gen_id, :year])
     transform!(groupby(df, :gen_id), :capacity_added_mw => cumsum => :cumulative_capacity_mw)
@@ -35,9 +35,10 @@ function line_inv_df(model, cfg::TEPConfig, sets, params)
     return df
 end
 
-function gen_dispatch_df(model, sets, params)
+function gen_dispatch_df(model, cfg::TEPConfig, sets, params)
     G, K, T, O = sets[:G], sets[:K], sets[:T], sets[:O]
     pg, pk = model[:pg], model[:pk]
+    Sb = cfg.per_unit ? 100.0 : 1.0
     
     existing  = DataFrame([(; type="existing", id=g, year=t, hour=o, dispatch_mw=value(pg[g, t, o])) for g in G, t in T, o in O][:])
     candidate = DataFrame([(; type="candidate", id=k, year=t, hour=o, dispatch_mw=value(pk[k, t, o])) for k in K, t in T, o in O][:])
@@ -58,7 +59,7 @@ function line_flow_df(model, cfg::TEPConfig, sets, params, year=nothing, hour=no
     return vcat(existing, candidate)
 end
 
-function load_shedding_df(model, sets, params)
+function load_shedding_df(model, cfg::TEPConfig, sets, params)
     haskey(model, :ls) || return DataFrame(load_id=Int[], year=Int[], hour=Int[], shed_mw=Float64[], demand_mw=Float64[], shed_pct=Float64[], weighted_shed_mwh=Float64[])
     
     D, T, O = sets[:D], sets[:T], sets[:O]
@@ -147,9 +148,9 @@ function save_results(model, cfg::TEPConfig, sets, params, out_dir::String)
     mkpath(out_dir)
     mkpath(joinpath(out_dir, "csv"))
     # Core outputs used for post-analysis
-    CSV.write(joinpath(out_dir, "csv", "generation_dispatch.csv"), gen_dispatch_df(model, sets, params))
-    CSV.write(joinpath(out_dir, "csv", "capacity_investments.csv"), capacity_inv_df(model, sets, params))
-    CSV.write(joinpath(out_dir, "csv", "load_shedding.csv"), load_shedding_df(model, sets, params))
+    CSV.write(joinpath(out_dir, "csv", "generation_dispatch.csv"), gen_dispatch_df(model, cfg, sets, params))
+    CSV.write(joinpath(out_dir, "csv", "capacity_investments.csv"), capacity_inv_df(model, cfg, sets, params))
+    CSV.write(joinpath(out_dir, "csv", "load_shedding.csv"), load_shedding_df(model, cfg, sets, params))
 
     if cfg.include_network
         CSV.write(joinpath(out_dir, "csv", "line_investments.csv"), line_inv_df(model, cfg, sets, params))
@@ -167,6 +168,8 @@ function save_results(model, cfg::TEPConfig, sets, params, out_dir::String)
 end
 
 function summarize_results(model, cfg::TEPConfig, sets, params; save_to::Union{String,Nothing}=nothing)
+    Sb = cfg.per_unit ? 100.0 : 1.0
+
     println("\n" * "="^50)
     println("             TEGP - RESULTS SUMMARY")
     println("="^50)
@@ -190,13 +193,27 @@ function summarize_results(model, cfg::TEPConfig, sets, params; save_to::Union{S
         println("  $(rpad(row.category, 20)): \$$(round(row.value, digits=2))")
     end
 
-    cap = capacity_inv_df(model, sets, params)
+    cap = capacity_inv_df(model, cfg, sets, params)
     built_cap = filter(row -> row.capacity_added_mw > 0.01, cap)
     if nrow(built_cap) > 0
         println("\n⚡ GENERATION CAPACITY INVESTMENTS")
         println("="^50)
-        for row in eachrow(built_cap)
-            println("  Year $(row.year), Gen $(row.gen_id): $(round(row.capacity_added_mw, digits=2)) MW (\$$(round(row.investment_cost, digits=2)))")
+        if nrow(built_cap) <= 10
+            for row in eachrow(built_cap)
+                println("  Year $(row.year), Gen $(row.gen_id): $(round(row.capacity_added_mw, digits=2)) MW (\$$(round(row.investment_cost, digits=2)))")
+            end
+        else
+            println("  $(nrow(built_cap)) build decisions found. Showing yearly summary:")
+            yearly_cap = combine(
+                groupby(built_cap, :year),
+                :gen_id => length => :units_built,
+                :capacity_added_mw => sum => :added_mw,
+                :annual_investment_cost => sum => :new_investment_cost
+            )
+            sort!(yearly_cap, :year)
+            for row in eachrow(yearly_cap)
+                println("  Year $(row.year): $(row.units_built) builds, $(round(row.added_mw, digits=2)) MW added, new investment \$$(round(row.new_investment_cost, digits=2))")
+            end
         end
     end
 

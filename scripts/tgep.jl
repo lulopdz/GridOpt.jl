@@ -16,18 +16,10 @@ include("../src/concrete/tgep_report.jl")
 # ==============================================================================
 # Default configurations
 DEFAULT_CONFIG = TEPConfig(
-    true,               # network
+    false,               # network
     false,              # integers
-    false,               # enforce_netzero
-    false,               # per_unit
-    10e6,               # bigM
-    Gurobi.Optimizer    # solver
-)
-SINGLE_NODE_CONFIG = TEPConfig(
-    false,              # network
-    false,              # integers
-    false,              # enforce_netzero
-    false,              # per_unit
+    true,               # enforce_netzero
+    true,               # per_unit
     10e6,               # bigM
     Gurobi.Optimizer    # solver
 )
@@ -38,7 +30,7 @@ config = DEFAULT_CONFIG
 
 pkg = "GridOpt.jl"
 data_path = joinpath(pwd(), pkg, "data", "planning")
-proj = "testnet"
+proj = "CODERS"
 
 # Load data
 data = load_tgep_data(data_path, proj)
@@ -51,3 +43,12 @@ solve_tgep!(model, config, sets, params)
 save_path = joinpath(pwd(), pkg, "results", proj)
 summarize_results(model, config, sets, params; save_to=save_path)
 save_plots(model, config, sets, params, save_path)
+
+println("\n" * "="^50)
+println("TGEP RUN COMPLETED")
+println("="^50)
+println("Project: $proj")
+println("Network included: $(config.include_network)")
+println("Enforce net-zero: $(config.enforce_netzero)")
+println("Per unit system: $(config.per_unit)")
+println("Results saved in: $save_path")

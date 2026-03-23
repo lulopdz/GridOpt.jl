@@ -5,17 +5,52 @@ using DataFrames, CSV
 include("../utils/plot_defaults.jl")
 set_theme()
 
-function capacity_inv_df(model, cfg::TEPConfig, sets, params)
+function capacity_inv_df(model, sets, params)
     K, T = sets[:K], sets[:T]
     pkmax, pkinv = model[:pkmax], params[:Pkinv]
-    Sb = cfg.per_unit ? 100.0 : 1.0
-    df = DataFrame([(; gen_id=k, year=t, capacity_added_mw= Sb * value(pkmax[k, t])) for k in K, t in T][:])
+    Sb, PriceFactor = params[:Sbase], params[:PriceFactor]
+
+    df = DataFrame([(; gen_id=k, year=t, 
+            capacity_added_mw=Sb * value(pkmax[k, t])) for k in K for t in T])
     
     sort!(df, [:gen_id, :year])
-    transform!(groupby(df, :gen_id), :capacity_added_mw => cumsum => :cumulative_capacity_mw)
-    # Annual payment stream: once built, capacity keeps incurring investment cost in later years.
-    df.annual_investment_cost = df.capacity_added_mw .* [pkinv[k] for k in df.gen_id]
-    df.investment_cost = df.cumulative_capacity_mw .* [pkinv[k] for k in df.gen_id]
+    transform!(groupby(df, :gen_id), 
+            :capacity_added_mw => cumsum => :cumulative_capacity_mw)
+
+    df.price_per_mw = [pkinv[k] * PriceFactor for k in df.gen_id]
+    df.annual_investment_cost = df.cumulative_capacity_mw .* df.price_per_mw
+    
+    return df
+end
+
+function gen_dispatch_df(model, sets, params)
+    G, K, T, O = sets[:G], sets[:K], sets[:T], sets[:O]
+    pg, pk = model[:pg], model[:pk]
+    ρ = params[:ρ]
+    Sb = params[:Sbase]
+    
+    existing  = DataFrame([(; type="existing", id=g, year=t, hour=o, weight=ρ[o],
+            dispatch_mw=Sb * value(pg[g, t, o])) for g in G for t in T for o in O])
+    candidate = DataFrame([(; type="candidate", id=k, year=t, hour=o, weight=ρ[o],
+            dispatch_mw=Sb * value(pk[k, t, o])) for k in K for t in T for o in O])
+    
+    return vcat(existing, candidate)
+end
+
+function load_shedding_df(model, sets, params)
+    D, T, O = sets[:D], sets[:T], sets[:O]
+    ls = model[:ls]
+    Pd, Pdf, Pdg = params[:Pd], params[:Pdf], params[:Pdg]
+    ρ = params[:ρ]
+    Sb = params[:Sbase]
+
+    df = DataFrame([(; 
+        load_id = d, year = t, hour = o, weight = ρ[o],
+        shed_mw = Sb * value(ls[d, t, o]),
+        demand_mw = Sb * Pd[d] * Pdf[o] * Pdg[t]
+    ) for d in D for t in T for o in O])
+    
+    df.shed_pct = ifelse.(df.demand_mw .> 0, 100.0 .* df.shed_mw ./ df.demand_mw, 0.0)
     
     return df
 end
@@ -23,61 +58,41 @@ end
 function line_inv_df(model, cfg::TEPConfig, sets, params)
     cfg.include_network || return DataFrame()
     L, T = sets[:L], sets[:T]
-    β, flinv = model[:β], params[:Flinv]
-    Fmaxl = params[:Fmaxl]
+    β = model[:β]
+    Flinv, Fmaxl = params[:Flinv], params[:Fmaxl]
+    Sb, PriceFactor = params[:Sbase], params[:PriceFactor]
     
-    df = DataFrame([(; line_id=l, year=t, built=(value(β[l, t]) > 0.5)) for l in L, t in T][:])
+    df = DataFrame([(; line_id=l, year=t, 
+            built=(value(β[l, t]) > 0.5)) for l in L for t in T])
+
     sort!(df, [:line_id, :year])
-    transform!(groupby(df, :line_id), :built => (x -> cumsum(Int.(x)) .> 0) => :active)
-    df.annual_investment_cost = [b ? flinv[l] * Fmaxl[l] : 0.0 for (b, l) in zip(df.built, df.line_id)]
-    df.investment_cost = [a ? flinv[l] * Fmaxl[l] : 0.0 for (a, l) in zip(df.active, df.line_id)]
+    transform!(groupby(df, :line_id), 
+            :built => (x -> cumsum(Int.(x)) .> 0) => :active)
+    
+    df.line_cost = [Sb * PriceFactor * Flinv[l] * Fmaxl[l] for l in df.line_id]
+    df.annual_investment_cost = [a ? cost : 0.0 for (a, cost) in zip(df.active, df.line_cost)]
     
     return df
 end
 
-function gen_dispatch_df(model, cfg::TEPConfig, sets, params)
-    G, K, T, O = sets[:G], sets[:K], sets[:T], sets[:O]
-    pg, pk = model[:pg], model[:pk]
-    Sb = cfg.per_unit ? 100.0 : 1.0
-    
-    existing  = DataFrame([(; type="existing", id=g, year=t, hour=o, dispatch_mw=value(pg[g, t, o])) for g in G, t in T, o in O][:])
-    candidate = DataFrame([(; type="candidate", id=k, year=t, hour=o, dispatch_mw=value(pk[k, t, o])) for k in K, t in T, o in O][:])
-    
-    return vcat(existing, candidate)
-end
 
 function line_flow_df(model, cfg::TEPConfig, sets, params, year=nothing, hour=nothing)
     cfg.include_network || return DataFrame()
     E, L, T, O = sets[:E], sets[:L], sets[:T], sets[:O]
+    f, fl = model[:f], model[:fl]
+    Sb = params[:Sbase]
     
     ts = isnothing(year) ? T : [year]
     os = isnothing(hour) ? O : [hour]
     
-    existing  = DataFrame([(; type="existing", line_id=e, year=t, hour=o, flow_mw=value(model[:f][e, t, o])) for e in E, t in ts, o in os][:])
-    candidate = DataFrame([(; type="candidate", line_id=l, year=t, hour=o, flow_mw=value(model[:fl][l, t, o])) for l in L, t in ts, o in os][:])
+    existing  = DataFrame([(; type="existing", line_id=e, year=t, hour=o, 
+            flow_mw=Sb * value(f[e, t, o])) for e in E for t in ts for o in os])
+    candidate = DataFrame([(; type="candidate", line_id=l, year=t, hour=o, 
+            flow_mw=Sb * value(fl[l, t, o])) for l in L for t in ts for o in os])
     
     return vcat(existing, candidate)
 end
 
-function load_shedding_df(model, cfg::TEPConfig, sets, params)
-    haskey(model, :ls) || return DataFrame(load_id=Int[], year=Int[], hour=Int[], shed_mw=Float64[], demand_mw=Float64[], shed_pct=Float64[], weighted_shed_mwh=Float64[])
-    
-    D, T, O = sets[:D], sets[:T], sets[:O]
-    Pd, Pdf, Pdg = params[:Pd], params[:Pdf], params[:Pdg]
-    ρ = get(params, :ρ, Dict(o => 1.0 for o in O))
-    ls = model[:ls]
-
-    df = DataFrame([(; 
-        load_id = d, year = t, hour = o, 
-        shed_mw = value(ls[d, t, o]),
-        demand_mw = Pd[d] * Pdf[o] * Pdg[t]
-    ) for d in D, t in T, o in O][:])
-    
-    df.shed_pct = ifelse.(df.demand_mw .> 0, 100.0 .* df.shed_mw ./ df.demand_mw, 0.0)
-    df.weighted_shed_mwh = [ρ[o] for o in df.hour] .* df.shed_mw
-    
-    return df
-end
 
 function cost_breakdown(model, cfg::TEPConfig, sets, params)
     G, K, L, T, O = sets[:G], sets[:K], sets[:L], sets[:T], sets[:O]
@@ -148,19 +163,19 @@ function save_results(model, cfg::TEPConfig, sets, params, out_dir::String)
     mkpath(out_dir)
     mkpath(joinpath(out_dir, "csv"))
     # Core outputs used for post-analysis
-    CSV.write(joinpath(out_dir, "csv", "generation_dispatch.csv"), gen_dispatch_df(model, cfg, sets, params))
-    CSV.write(joinpath(out_dir, "csv", "capacity_investments.csv"), capacity_inv_df(model, cfg, sets, params))
-    CSV.write(joinpath(out_dir, "csv", "load_shedding.csv"), load_shedding_df(model, cfg, sets, params))
+    CSV.write(joinpath(out_dir, "csv", "cap_gen_inv.csv"), capacity_inv_df(model, sets, params))
+    CSV.write(joinpath(out_dir, "csv", "gen_dispatch.csv"), gen_dispatch_df(model, sets, params))
+    CSV.write(joinpath(out_dir, "csv", "load_shedding.csv"), load_shedding_df(model, sets, params))
 
     if cfg.include_network
-        CSV.write(joinpath(out_dir, "csv", "line_investments.csv"), line_inv_df(model, cfg, sets, params))
+        CSV.write(joinpath(out_dir, "csv", "line_inv.csv"), line_inv_df(model, cfg, sets, params))
         CSV.write(joinpath(out_dir, "csv", "line_flows.csv"), line_flow_df(model, cfg, sets, params))
     end
 
     costs = cost_breakdown(model, cfg, sets, params)
     CSV.write(joinpath(out_dir, "csv", "cost_summary.csv"), costs.summary)
-    CSV.write(joinpath(out_dir, "csv", "operating_costs.csv"), costs.operating)
-    CSV.write(joinpath(out_dir, "csv", "investment_costs.csv"), costs.investment)
+    CSV.write(joinpath(out_dir, "csv", "op_costs.csv"), costs.operating)
+    CSV.write(joinpath(out_dir, "csv", "inv_costs.csv"), costs.investment)
     CSV.write(joinpath(out_dir, "csv", "fixed_costs.csv"), costs.fixed)
     CSV.write(joinpath(out_dir, "csv", "carbon_costs.csv"), costs.carbon)
 
@@ -168,8 +183,6 @@ function save_results(model, cfg::TEPConfig, sets, params, out_dir::String)
 end
 
 function summarize_results(model, cfg::TEPConfig, sets, params; save_to::Union{String,Nothing}=nothing)
-    Sb = cfg.per_unit ? 100.0 : 1.0
-
     println("\n" * "="^50)
     println("             TEGP - RESULTS SUMMARY")
     println("="^50)
@@ -193,14 +206,14 @@ function summarize_results(model, cfg::TEPConfig, sets, params; save_to::Union{S
         println("  $(rpad(row.category, 20)): \$$(round(row.value, digits=2))")
     end
 
-    cap = capacity_inv_df(model, cfg, sets, params)
+    cap = capacity_inv_df(model, sets, params)
     built_cap = filter(row -> row.capacity_added_mw > 0.01, cap)
     if nrow(built_cap) > 0
         println("\n⚡ GENERATION CAPACITY INVESTMENTS")
         println("="^50)
         if nrow(built_cap) <= 10
             for row in eachrow(built_cap)
-                println("  Year $(row.year), Gen $(row.gen_id): $(round(row.capacity_added_mw, digits=2)) MW (\$$(round(row.investment_cost, digits=2)))")
+                println("  Year $(row.year), Gen $(row.gen_id): $(round(row.capacity_added_mw, digits=2)) MW (\$$(round(row.annual_investment_cost, digits=2)))")
             end
         else
             println("  $(nrow(built_cap)) build decisions found. Showing yearly summary:")
@@ -224,7 +237,7 @@ function summarize_results(model, cfg::TEPConfig, sets, params; save_to::Union{S
             println("\n🔌 TRANSMISSION LINE INVESTMENTS")
             println("="^50)
             for row in eachrow(built_lines)
-                println("  Year $(row.year), Line $(row.line_id): Built (\$$(round(row.investment_cost, digits=2)))")
+                println("  Year $(row.year), Line $(row.line_id): Built (\$$(round(row.annual_investment_cost, digits=2)))")
             end
         else
             println("\n🔌 TRANSMISSION LINE INVESTMENTS")

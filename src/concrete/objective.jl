@@ -13,7 +13,7 @@ function set_tgep_objective!(model, config::TEPConfig, sets, params)
     VoLL = params[:VoLL]
     
     # Operating costs
-    op_cost = Sb * sum(
+    op_cost = sum(
         α[t] * sum(
             ρ[o] * (
                 sum(Pgcost[g] * pg[g, t, o] for g in G) +
@@ -25,21 +25,21 @@ function set_tgep_objective!(model, config::TEPConfig, sets, params)
     
     # Investment costs
     if config.include_network
-        inv_cost = Sb * sum(
+        inv_cost = sum(
             α[t] * (
                 sum(Pkinv[k] * sum(pkmax[k, τ] for τ in 1:t) for k in K) +
                 sum(Flinv[l] * Fmaxl[l] * sum(β[l, τ] for τ in 1:t) for l in L)
             ) for t in T
         )
     else
-        inv_cost = Sb * sum(
+        inv_cost = sum(
             α[t] * sum(Pkinv[k] * sum(pkmax[k, τ] for τ in 1:t) for k in K)
             for t in T
         )
     end
 
     # Fixed annual costs
-    fixed_cost = Sb * sum(
+    fixed_cost = sum(
         α[t] * (
             sum(Pgfixed[g] * Pgmax[g] for g in G) +
             sum(Pkfixed[k] * sum(pkmax[k, τ] for τ in 1:t) for k in K)

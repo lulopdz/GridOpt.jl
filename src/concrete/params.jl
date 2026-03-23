@@ -16,7 +16,7 @@ function process_tgep_params(data, config::TEPConfig)
     solar_cf = hasproperty(sce, :solar_cf) ? Dict(sce.hour .=> Float64.(sce.solar_cf)) : Dict()
 
     # Getting generator parameters with tech fallback
-    pmin_val(r) = hasproperty(r, :Pmin) ? r.Pmin : get_tech_param(gtech, r.gen_type, :min_output_ratio)
+    pmin_val(r) = hasproperty(r, :Pmin) ? r.Pmin : get_tech_param(gtech, r.gen_type, :min_output_ratio) * r.capacity_mw
     om_val(r)   = hasproperty(r, :om_cost) ? r.om_cost : get_tech_param(gtech, r.gen_type, :variable_om_costs)
     fom_val(r)  = hasproperty(r, :fixed_om_cost) ? r.fixed_om_cost : get_tech_param(gtech, r.gen_type, :fixed_om_costs)
     inv_val(r)  = hasproperty(r, :inv_cost) ? r.inv_cost : get_tech_param(gtech, r.gen_type, :capital_cost_CAD_MW_per_year)
@@ -64,7 +64,7 @@ function process_tgep_params(data, config::TEPConfig)
         :Pd   => Dict(load.id .=> load.demand_mw ./ Sb),
         :VoLL => Dict(load.id .=> (hasproperty(load, :cost_LS) ? load.cost_LS ./ PriceFactor : default_voll)),
         
-        :Fmax  => Dict(line.id .=> 3 * line.ttc_mw ./ Sb),
+        :Fmax  => Dict(line.id .=> line.ttc_mw ./ Sb),
         :xe    => Dict(r.id => r.reactance / (config.per_unit ? (r.voltage^2 / Sb) : 1.0) for r in eachrow(line)),
         
         :Fmaxl => Dict(tcand.id .=> tcand.ttc_mw ./ Sb),
@@ -77,6 +77,10 @@ function process_tgep_params(data, config::TEPConfig)
         :Pdg => Dict(econ.t .=> econ.demand_growth),
         :α   => Dict(econ.t .=> econ.a),
         :Ctax => ctax,
-        :NetZeroCap => netzero_cap
+        :NetZeroCap => netzero_cap,
+
+        # Bases 
+        :Sbase => Sb,
+        :PriceFactor => PriceFactor
     )
 end

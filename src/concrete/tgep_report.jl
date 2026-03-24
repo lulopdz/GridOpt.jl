@@ -97,39 +97,50 @@ end
 function cost_breakdown(model, cfg::TEPConfig, sets, params)
     G, K, L, T, O = sets[:G], sets[:K], sets[:L], sets[:T], sets[:O]
     α, ρ = params[:α], params[:ρ]
-    pgcost, pkcost, pkinv, flinv = params[:Pgcost], params[:Pkcost], params[:Pkinv], params[:Flinv]
-    fmaxl = params[:Fmaxl]
-    pgfixed, pkfixed = params[:Pgfixed], params[:Pkfixed]
-    pgmax = params[:Pgmax]
-    ctax = get(params, :Ctax, Dict(t => 0.0 for t in T))
-    sb = cfg.per_unit ? 100.0 : 1.0
+    Pgcost, Pkcost, Pkinv = params[:Pgcost], params[:Pkcost], params[:Pkinv]
+    Pgfixed, Pkfixed = params[:Pgfixed], params[:Pkfixed]
+    VoLL, Pgmax = params[:VoLL], params[:Pgmax]
+    Flinv, Fmaxl = params[:Flinv], params[:Fmaxl]
+    Ctax = get(params, :Ctax, Dict(t => 0.0 for t in T))
+    Sb, PriceFactor = params[:Sbase], params[:PriceFactor]
     has_em = haskey(model, :em)
 
     op = DataFrame([(; 
         year = t,
-        existing_gen = sb * α[t] * sum(ρ[o] * pgcost[g] * value(model[:pg][g, t, o]) for g in G, o in O),
-        candidate_gen = sb * α[t] * sum(ρ[o] * pkcost[k] * value(model[:pk][k, t, o]) for k in K, o in O),
-        load_shed = sb * α[t] * sum(ρ[o] * params[:VoLL][d] * value(model[:ls][d, t, o]) for d in sets[:D], o in O)
+        existing_gen = Sb * α[t] * sum(ρ[o] * PriceFactor * Pgcost[g] * 
+                value(model[:pg][g, t, o]) for g in G, o in O),
+        candidate_gen = Sb * α[t] * sum(ρ[o] * PriceFactor * Pkcost[k] * 
+                value(model[:pk][k, t, o]) for k in K, o in O),
+        load_shed = Sb * α[t] * sum(ρ[o] * PriceFactor * VoLL[d] * 
+                value(model[:ls][d, t, o]) for d in sets[:D], o in O)
     ) for t in T])
     op.total_op = op.existing_gen .+ op.candidate_gen .+ op.load_shed
 
     inv = DataFrame([(;
         year = t,
-        gen_inv = sb * α[t] * sum(pkinv[k] * sum(value(model[:pkmax][k, τ]) for τ in 1:t) for k in K),
-        line_inv = cfg.include_network ? sb * α[t] * sum(flinv[l] * fmaxl[l] * sum(value(model[:β][l, τ]) for τ in 1:t) for l in L) : 0.0
+        gen_inv = Sb * α[t] * sum(PriceFactor * Pkinv[k] * 
+                sum(value(model[:pkmax][k, τ]) for τ in 1:t) for k in K),
+        line_inv = cfg.include_network ? Sb * α[t] * 
+                sum(PriceFactor * Flinv[l] * Fmaxl[l] * 
+                sum(value(model[:β][l, τ]) for τ in 1:t) for l in L) : 0.0
     ) for t in T])
     inv.total_inv = inv.gen_inv .+ inv.line_inv
 
     fixed = DataFrame([(; 
         year = t,
-        existing_fixed = sb * α[t] * sum(pgfixed[g] * pgmax[g] for g in G),
-        candidate_fixed = sb * α[t] * sum(pkfixed[k] * sum(value(model[:pkmax][k, τ]) for τ in 1:t) for k in K)
+        existing_fixed = Sb * α[t] * 
+                sum(PriceFactor * Pgfixed[g] * Pgmax[g] for g in G),
+        candidate_fixed = Sb * α[t] * 
+                sum(PriceFactor * Pkfixed[k] * 
+                sum(value(model[:pkmax][k, τ]) for τ in 1:t) for k in K)
     ) for t in T])
     fixed.total_fixed = fixed.existing_fixed .+ fixed.candidate_fixed
 
     carbon = DataFrame([(; 
         year = t,
-        carbon_cost = has_em ? α[t] * sum(ρ[o] * ctax[t] * value(model[:em][t, o]) for o in O) : 0.0
+        carbon_cost = has_em ? α[t] * 
+                sum(ρ[o] * PriceFactor * Ctax[t] * 
+                value(model[:em][t, o]) for o in O) : 0.0
     ) for t in T])
 
     total_op, total_inv = sum(op.total_op), sum(inv.total_inv)
@@ -145,13 +156,14 @@ end
 function yearly_supply_demand(model, sets, params)
     G, K, D, T, O = sets[:G], sets[:K], sets[:D], sets[:T], sets[:O]
     ρ, pdf, pdg = params[:ρ], params[:Pdf], params[:Pdg]
+    Sb, PriceFactor = params[:Sbase], params[:PriceFactor]
     
     gwh = 1.0 / 1000.0
     df = DataFrame([(;
         year = t,
-        demand_gwh = sum(ρ[o] * params[:Pd][d] * pdf[o] * pdg[t] for d in D, o in O) * gwh,
-        existing_gen_gwh = sum(ρ[o] * value(model[:pg][g, t, o]) for g in G, o in O) * gwh,
-        candidate_gen_gwh = sum(ρ[o] * value(model[:pk][k, t, o]) for k in K, o in O) * gwh
+        demand_gwh = sum(ρ[o] * Sb * params[:Pd][d] * pdf[o] * pdg[t] for d in D, o in O) * gwh,
+        existing_gen_gwh = sum(ρ[o] * Sb * value(model[:pg][g, t, o]) for g in G, o in O) * gwh,
+        candidate_gen_gwh = sum(ρ[o] * Sb * value(model[:pk][k, t, o]) for k in K, o in O) * gwh
     ) for t in T])
     
     df.total_gen_gwh = df.existing_gen_gwh .+ df.candidate_gen_gwh

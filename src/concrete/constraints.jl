@@ -8,7 +8,7 @@ function add_generation_constraints!(model, sets, params)
     Pgcf, Pkcf = params[:Pgcf], params[:Pkcf]
     
     # Existing generator limits
-    @constraint(model, [g in G, t in T, o in O], Pgmin[g] <= pg[g, t, o])
+    @constraint(model, [g in G, t in T, o in O], Pgmin[g] * Pgmax[g] <= pg[g, t, o])
     @constraint(model, [g in G, t in T, o in O], pg[g, t, o] <= Pgmax[g] * Pgcf[(g, o)])
     
     # Candidate generator limits
@@ -62,6 +62,7 @@ function add_network_constraints!(model, config::TEPConfig, sets, params)
     θ, f, fl, β = model[:θ], model[:f], model[:fl], model[:β]
     xe, xl, Fmax, Fmaxl, Pd = params[:xe], params[:xl], params[:Fmax], params[:Fmaxl], params[:Pd]
     M = config.bigM
+    Sb = config.per_unit ? 100.0 : 1.0
     
     # Power balance at each bus
     @constraint(model, demand[b in B, t in T, o in O],
@@ -79,11 +80,12 @@ function add_network_constraints!(model, config::TEPConfig, sets, params)
     @constraint(model, [e in E, t in T, o in O], f[e, t, o] == (θ[fr[e], t, o] - θ[to[e], t, o]) / xe[e])
     @constraint(model, [e in E, t in T, o in O], -Fmax[e] <= f[e, t, o] <= Fmax[e])
     
-    # DC power flow for candidate lines (with Big-M)
+    # DC power flow for candidate lines (with Big-M, scaled by Sb for per-unit consistency)
+    M_scaled = M * Sb  # Scale Big-M by Sb to maintain consistent constraint tightness
     @constraint(model, [l in L, t in T, o in O], 
-        fl[l, t, o] - (θ[frn[l], t, o] - θ[ton[l], t, o]) / xl[l] <= M * (1 - sum(β[l, τ] for τ in 1:t)))
+        fl[l, t, o] - (θ[frn[l], t, o] - θ[ton[l], t, o]) / xl[l] <= M_scaled * (1 - sum(β[l, τ] for τ in 1:t)))
     @constraint(model, [l in L, t in T, o in O], 
-        (θ[frn[l], t, o] - θ[ton[l], t, o]) / xl[l] - fl[l, t, o] <= M * (1 - sum(β[l, τ] for τ in 1:t)))
+        (θ[frn[l], t, o] - θ[ton[l], t, o]) / xl[l] - fl[l, t, o] <= M_scaled * (1 - sum(β[l, τ] for τ in 1:t)))
     
     # Candidate line capacity limits
     @constraint(model, [l in L, t in T, o in O], -Fmaxl[l] * sum(β[l, τ] for τ in 1:t) <= fl[l, t, o])
@@ -91,6 +93,7 @@ function add_network_constraints!(model, config::TEPConfig, sets, params)
     
     # Reference bus
     @constraint(model, [t in T, o in O], θ[first(B), t, o] == 0.0)
+    @constraint(model, [b in B, t in T, o in O], -2π <= θ[b, t, o] <= 2π)
 end
 
 # ==============================================================================

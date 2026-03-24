@@ -16,7 +16,7 @@ function process_tgep_params(data, config::TEPConfig)
     solar_cf = hasproperty(sce, :solar_cf) ? Dict(sce.hour .=> Float64.(sce.solar_cf)) : Dict()
 
     # Getting generator parameters with tech fallback
-    pmin_val(r) = hasproperty(r, :Pmin) ? r.Pmin : get_tech_param(gtech, r.gen_type, :min_output_ratio) * r.capacity_mw
+    pmin_val(r) = hasproperty(r, :Pmin) ? r.Pmin : get_tech_param(gtech, r.gen_type, :min_output_ratio)
     om_val(r)   = hasproperty(r, :om_cost) ? r.om_cost : get_tech_param(gtech, r.gen_type, :variable_om_costs)
     fom_val(r)  = hasproperty(r, :fixed_om_cost) ? r.fixed_om_cost : get_tech_param(gtech, r.gen_type, :fixed_om_costs)
     inv_val(r)  = hasproperty(r, :inv_cost) ? r.inv_cost : get_tech_param(gtech, r.gen_type, :capital_cost_CAD_MW_per_year)
@@ -43,19 +43,19 @@ function process_tgep_params(data, config::TEPConfig)
     return Dict{Symbol, Any}(
         # Existing Generators
         :Pgmax  => Dict(gen.id .=> gen.capacity_mw ./ Sb),
-        :Pgmin  => Dict(r.id => pmin_val(r) / Sb for r in eachrow(gen)),
-        :Pgcost => Dict(r.id => om_val(r) / PriceFactor for r in eachrow(gen)),
-        :Pgfixed => Dict(r.id => fom_val(r) / PriceFactor for r in eachrow(gen)),
+        :Pgmin  => Dict(r.id => pmin_val(r) for r in eachrow(gen)),             # Ratio
+        :Pgcost => Dict(r.id => om_val(r) / PriceFactor * Sb for r in eachrow(gen)),
+        :Pgfixed => Dict(r.id => fom_val(r) / PriceFactor * Sb for r in eachrow(gen)),
         :Pgem => Dict(r.id => em_val(r) for r in eachrow(gen)),
         :Pgtype => Dict(gen.id .=> gen.gen_type),
         :Pgcf   => Dict((g.id, h) => get_cf(g.gen_type, h, wind_cf, solar_cf) for g in eachrow(gen), h in sce.hour),
 
         # Candidate Generators
         :Pkmax  => Dict(gcand.id .=> gcand.capacity_mw ./ Sb),
-        :Pkmin  => Dict(r.id => pmin_val(r) / Sb for r in eachrow(gcand)),
-        :Pkcost => Dict(r.id => om_val(r) / PriceFactor for r in eachrow(gcand)),
-        :Pkfixed => Dict(r.id => fom_val(r) / PriceFactor for r in eachrow(gcand)),
-        :Pkinv  => Dict(r.id => inv_val(r) / PriceFactor for r in eachrow(gcand)),
+        :Pkmin  => Dict(r.id => pmin_val(r) for r in eachrow(gcand)),
+        :Pkcost => Dict(r.id => om_val(r) / PriceFactor * Sb for r in eachrow(gcand)),
+        :Pkfixed => Dict(r.id => fom_val(r) / PriceFactor * Sb for r in eachrow(gcand)),
+        :Pkinv  => Dict(r.id => inv_val(r) / PriceFactor * Sb for r in eachrow(gcand)),
         :Pkem   => Dict(r.id => em_val(r) for r in eachrow(gcand)),
         :Pktype => Dict(gcand.id .=> gcand.gen_type),
         :Pkcf   => Dict((k.id, h) => get_cf(k.gen_type, h, wind_cf, solar_cf) for k in eachrow(gcand), h in sce.hour),
@@ -65,11 +65,11 @@ function process_tgep_params(data, config::TEPConfig)
         :VoLL => Dict(load.id .=> (hasproperty(load, :cost_LS) ? load.cost_LS ./ PriceFactor : default_voll)),
         
         :Fmax  => Dict(line.id .=> line.ttc_mw ./ Sb),
-        :xe    => Dict(r.id => r.reactance / (config.per_unit ? (r.voltage^2 / Sb) : 1.0) for r in eachrow(line)),
+        :xe    => Dict(r.id => r.reactance / (config.per_unit ? (r.voltage^2 / Sb) : r.voltage^2) for r in eachrow(line)),
         
         :Fmaxl => Dict(tcand.id .=> tcand.ttc_mw ./ Sb),
-        :Flinv => Dict(r.id => line_inv_val(r) / PriceFactor for r in eachrow(tcand)),
-        :xl    => Dict(r.id => r.reactance / (config.per_unit ? (r.voltage^2 / Sb) : 1.0) for r in eachrow(tcand)),
+        :Flinv => Dict(r.id => line_inv_val(r) / PriceFactor * Sb for r in eachrow(tcand)),
+        :xl    => Dict(r.id => r.reactance / (config.per_unit ? (r.voltage^2 / Sb) : r.voltage^2) for r in eachrow(tcand)),
 
         # Economic / Temporal
         :ρ   => Dict(sce.hour .=> sce.weight),

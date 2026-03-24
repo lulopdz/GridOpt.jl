@@ -9,7 +9,6 @@ function set_tgep_objective!(model, config::TEPConfig, sets, params)
     Ctax = params[:Ctax]
     Pgmax = params[:Pgmax]
     Fmaxl = params[:Fmaxl]
-    Sb = config.per_unit ? 100.0 : 1.0
     VoLL = params[:VoLL]
     
     # Operating costs

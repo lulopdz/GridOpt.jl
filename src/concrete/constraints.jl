@@ -62,15 +62,14 @@ function add_network_constraints!(model, config::TEPConfig, sets, params)
     θ, f, fl, β = model[:θ], model[:f], model[:fl], model[:β]
     xe, xl, Fmax, Fmaxl, Pd = params[:xe], params[:xl], params[:Fmax], params[:Fmaxl], params[:Pd]
     M = config.bigM
-    Sb = config.per_unit ? 100.0 : 1.0
+    Sb = params[:Sbase]
     
     # Power balance at each bus
     @constraint(model, demand[b in B, t in T, o in O],
         sum(pg[g, t, o] for g in Ωg[b]) + sum(pk[k, t, o] for k in Ωk[b]) +
         sum(f[e, t, o] for e in E if to[e] == b)   - sum(f[e, t, o] for e in E if fr[e] == b) +
-        sum(fl[l, t, o] for l in L if ton[l] == b) - sum(fl[l, t, o] for l in L if frn[l] == b) +
-        sum(ls[d, t, o] for d in Ωd[b])
-        == sum(Pd[d]*Pdf[o]*Pdg[t] for d in Ωd[b])
+        sum(fl[l, t, o] for l in L if ton[l] == b) - sum(fl[l, t, o] for l in L if frn[l] == b)
+        == sum(Pd[d]*Pdf[o]*Pdg[t] for d in Ωd[b]) - sum(ls[d, t, o] for d in Ωd[b])
     )
 
     # Load shedding cannot exceed demand
@@ -81,11 +80,10 @@ function add_network_constraints!(model, config::TEPConfig, sets, params)
     @constraint(model, [e in E, t in T, o in O], -Fmax[e] <= f[e, t, o] <= Fmax[e])
     
     # DC power flow for candidate lines (with Big-M, scaled by Sb for per-unit consistency)
-    M_scaled = M * Sb  # Scale Big-M by Sb to maintain consistent constraint tightness
     @constraint(model, [l in L, t in T, o in O], 
-        fl[l, t, o] - (θ[frn[l], t, o] - θ[ton[l], t, o]) / xl[l] <= M_scaled * (1 - sum(β[l, τ] for τ in 1:t)))
+        fl[l, t, o] - (θ[frn[l], t, o] - θ[ton[l], t, o]) / xl[l] <= M * (1 - sum(β[l, τ] for τ in 1:t)))
     @constraint(model, [l in L, t in T, o in O], 
-        (θ[frn[l], t, o] - θ[ton[l], t, o]) / xl[l] - fl[l, t, o] <= M_scaled * (1 - sum(β[l, τ] for τ in 1:t)))
+        (θ[frn[l], t, o] - θ[ton[l], t, o]) / xl[l] - fl[l, t, o] <= M * (1 - sum(β[l, τ] for τ in 1:t)))
     
     # Candidate line capacity limits
     @constraint(model, [l in L, t in T, o in O], -Fmaxl[l] * sum(β[l, τ] for τ in 1:t) <= fl[l, t, o])

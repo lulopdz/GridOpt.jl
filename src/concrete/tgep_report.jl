@@ -114,7 +114,8 @@ function cost_breakdown(model, cfg::TEPConfig, sets, params)
         load_shed = Sb * α[t] * sum(ρ[o] * PriceFactor * VoLL[d] * 
                 value(model[:ls][d, t, o]) for d in sets[:D], o in O)
     ) for t in T])
-    op.total_op = op.existing_gen .+ op.candidate_gen .+ op.load_shed
+    op.total_op = op.existing_gen .+ op.candidate_gen
+
 
     inv = DataFrame([(;
         year = t,
@@ -143,11 +144,12 @@ function cost_breakdown(model, cfg::TEPConfig, sets, params)
                 value(model[:em][t, o]) for o in O) : 0.0
     ) for t in T])
 
-    total_op, total_inv = sum(op.total_op), sum(inv.total_inv)
+    total_op, total_load_shed, total_inv = sum(op.total_op), sum(op.load_shed), sum(inv.total_inv)
     total_fixed, total_carbon = sum(fixed.total_fixed), sum(carbon.carbon_cost)
+    total_cost = total_op + total_load_shed + total_inv + total_fixed + total_carbon
     summary = DataFrame(
-        category=["Operating Cost", "Investment Cost", "Fixed O&M Cost", "Carbon Cost", "Total Cost"],
-        value=[total_op, total_inv, total_fixed, total_carbon, total_op + total_inv + total_fixed + total_carbon]
+        category=["Operating Cost", "Load Shedding Cost", "Investment Cost", "Fixed O&M Cost", "Carbon Cost", "Total Cost"],
+        value=[total_op, total_load_shed, total_inv, total_fixed, total_carbon, total_cost]
     )
     
     return (summary=summary, operating=op, investment=inv, fixed=fixed, carbon=carbon)

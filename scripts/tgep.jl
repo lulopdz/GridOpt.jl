@@ -33,13 +33,13 @@ data_path = joinpath(pwd(), pkg, "data", "planning")
 proj = "testnet"
 
 # Load data
-data = load_tgep_data(data_path, proj)
+data =  load_tgep_data(data_path, proj)
 
 # Build and solve model
 model, sets, params = build_tgep_model(config, data)
 solve_tgep!(model, config, sets, params)
 
-# report_solution(model, config, sets, params)
+# Report_solution(model, config, sets, params)
 save_path = joinpath(pwd(), pkg, "results", proj)
 summarize_results(model, config, sets, params; save_to=save_path)
 save_plots(model, config, sets, params, save_path)

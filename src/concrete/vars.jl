@@ -1,13 +1,19 @@
 # src/concrete/vars.jl
 function add_tgep_vars!(m, cfg::TEPConfig, sets)
     G, K, D = sets[:G], sets[:K], sets[:D]
-    E, L, B = sets[:E], sets[:L], sets[:B] 
+    E, L, B = sets[:E], sets[:L], sets[:B]
     T, O = sets[:T], sets[:O]
+    # S = sets[:S] # Storage units (not yet implemented)
     
     # Dispatch variables
     @variable(m, pg[g in G, t in T, o in O] >= 0)
     @variable(m, pk[k in K, t in T, o in O] >= 0)
     @variable(m, ls[d in D, t in T, o in O] >= 0)
+
+    # Storage variables (energy level in MWh, charge/discharge in MW)
+    # @variable(m, soc[s in S, t in T, o in O] >= 0)
+    # @variable(m, pch[s in S, t in T, o in O] >= 0)
+    # @variable(m, pdis[s in S, t in T, o in O] >= 0)
 
     # Emissions accounting variables (tCO2/h representative block).
     @variable(m, em_e[g in G, t in T, o in O])
@@ -18,7 +24,7 @@ function add_tgep_vars!(m, cfg::TEPConfig, sets)
     @variable(m, pkmax[k in K, t in T] >= 0)
     @variable(m, β[l in L, t in T], Bin)
     
-    # Network variables=
+    # Network variables
     if cfg.include_network
         @variable(m, θ[b in B, t in T, o in O])
         @variable(m, f[e in E, t in T, o in O])

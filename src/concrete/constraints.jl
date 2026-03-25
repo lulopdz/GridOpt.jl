@@ -6,15 +6,26 @@ function add_generation_constraints!(model, sets, params)
     pg, pk, pkmax = model[:pg], model[:pk], model[:pkmax]
     Pgmax, Pgmin, Pkmin, Pkmax = params[:Pgmax], params[:Pgmin], params[:Pkmin], params[:Pkmax]
     Pgcf, Pkcf = params[:Pgcf], params[:Pkcf]
-    
+    Pgramp, Pkramp = params[:Pgramp], params[:Pkramp]
+
     # Existing generator limits
     @constraint(model, [g in G, t in T, o in O], Pgmin[g] * Pgmax[g] <= pg[g, t, o])
     @constraint(model, [g in G, t in T, o in O], pg[g, t, o] <= Pgmax[g] * Pgcf[(g, o)])
+    @constraint(model, [g in G, t in T, o in O[2:end]], 
+        pg[g, t, o] - pg[g, t, o-1] <= Pgramp[g] * Pgmax[g]) # Ramp Up
+    @constraint(model, [g in G, t in T, o in O[2:end]], 
+        pg[g, t, o-1] - pg[g, t, o] <= Pgramp[g] * Pgmax[g]) # Ramp Down
     
     # Candidate generator limits
     @constraint(model, [k in K, t in T, o in O], Pkmin[k] * sum(pkmax[k, τ] for τ in T if τ <= t) <= pk[k, t, o])
     @constraint(model, [k in K, t in T, o in O], pk[k, t, o] <= sum(pkmax[k, τ] for τ in T if τ <= t) * Pkcf[(k, o)])
     @constraint(model, [k in K, t in T], sum(pkmax[k, τ] for τ in T if τ <= t) <= Pkmax[k])
+    @constraint(model, [k in K, t in T, o in O[2:end]], 
+        pk[k, t, o] - pk[k, t, o-1] <= Pkramp[k] * sum(pkmax[k, τ] for τ in T if τ <= t)) # Ramp Up
+    
+    @constraint(model, [k in K, t in T, o in O[2:end]], 
+        pk[k, t, o-1] - pk[k, t, o] <= Pkramp[k] * sum(pkmax[k, τ] for τ in T if τ <= t)) # Ramp Down
+
 end
 
 # ==============================================================================

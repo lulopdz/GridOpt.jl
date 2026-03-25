@@ -17,6 +17,7 @@ function process_tgep_params(data, config::TEPConfig)
 
     # Getting generator parameters with tech fallback
     pmin_val(r) = hasproperty(r, :Pmin) ? r.Pmin : get_tech_param(gtech, r.gen_type, :min_output_ratio)
+    ramp_val(r) = hasproperty(r, :ramp_rate) ? r.ramp_rate : get_tech_param(gtech, r.gen_type, :ramp_rate)
     om_val(r)   = hasproperty(r, :om_cost) ? r.om_cost : get_tech_param(gtech, r.gen_type, :variable_om_costs)
     fom_val(r)  = hasproperty(r, :fixed_om_cost) ? r.fixed_om_cost : get_tech_param(gtech, r.gen_type, :fixed_om_costs)
     inv_val(r)  = hasproperty(r, :inv_cost) ? r.inv_cost : get_tech_param(gtech, r.gen_type, :capital_cost_CAD_MW_per_year)
@@ -45,6 +46,7 @@ function process_tgep_params(data, config::TEPConfig)
         # Existing Generators
         :Pgmax  => Dict(gen.id .=> gen.capacity_mw ./ Sb),
         :Pgmin  => Dict(r.id => pmin_val(r) for r in eachrow(gen)),             # Ratio
+        :Pgramp => Dict(r.id => ramp_val(r) for r in eachrow(gen)),  # Ratio of Pmax per hour
         :Pgcost => Dict(r.id => om_val(r) / PriceFactor for r in eachrow(gen)),
         :Pgfixed => Dict(r.id => fom_val(r) / PriceFactor for r in eachrow(gen)),
         :Pgem => Dict(r.id => em_val(r) for r in eachrow(gen)),
@@ -54,6 +56,7 @@ function process_tgep_params(data, config::TEPConfig)
         # Candidate Generators
         :Pkmax  => Dict(gcand.id .=> gcand.capacity_mw ./ Sb),
         :Pkmin  => Dict(r.id => pmin_val(r) for r in eachrow(gcand)),
+        :Pkramp => Dict(r.id => ramp_val(r) for r in eachrow(gcand)),
         :Pkcost => Dict(r.id => om_val(r) / PriceFactor for r in eachrow(gcand)),
         :Pkfixed => Dict(r.id => fom_val(r) / PriceFactor for r in eachrow(gcand)),
         :Pkinv  => Dict(r.id => inv_val(r) / PriceFactor for r in eachrow(gcand)),

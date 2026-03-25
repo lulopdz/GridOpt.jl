@@ -21,6 +21,10 @@ function process_tgep_sets(data)
     # Node mappings
     Bmap = Dict(nodes.node_code .=> nodes.id)
     ncode = Dict(nodes.id .=> nodes.node_code)
+
+    # Slack set: bus where the largest installed generator is connected
+    b_sl = nrow(gen) > 0 ? Bmap[gen.node_code[argmax(gen.capacity_mw)]] : first(B)
+    Slack = [b_sl]
     
     # Items per bus
     items_b(df, b) = [df.id[i] for i in 1:nrow(df) if df.node_code[i] == ncode[b]]
@@ -45,6 +49,7 @@ function process_tgep_sets(data)
         :L => L,
         :T => T,
         :O => O,
+        :Slack => Slack,
         :Ωg => Ωg,
         :Ωk => Ωk,
         :Ωd => Ωd,

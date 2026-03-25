@@ -66,6 +66,7 @@ end
 function add_network_constraints!(model, config::TEPConfig, sets, params)
     B, D, E, L, T, O = sets[:B], sets[:D], sets[:E], sets[:L], sets[:T], sets[:O]
     G, K = sets[:G], sets[:K]
+    Slack = sets[:Slack]
     Ωg, Ωk, Ωd = sets[:Ωg], sets[:Ωk], sets[:Ωd]
     fr, to, frn, ton = sets[:fr], sets[:to], sets[:frn], sets[:ton]
     Pdf, Pdg = params[:Pdf], params[:Pdg]
@@ -101,7 +102,7 @@ function add_network_constraints!(model, config::TEPConfig, sets, params)
     @constraint(model, [l in L, t in T, o in O], fl[l, t, o] <= Fmaxl[l] * sum(β[l, τ] for τ in 1:t))
     
     # Reference bus
-    @constraint(model, [t in T, o in O], θ[first(B), t, o] == 0.0)
+    @constraint(model, [t in T, o in O], θ[Slack[1], t, o] == 0.0)
     @constraint(model, [b in B, t in T, o in O], -2π <= θ[b, t, o] <= 2π)
 end
 

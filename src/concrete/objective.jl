@@ -26,13 +26,13 @@ function set_tgep_objective!(model, config::TEPConfig, sets, params)
     if config.include_network
         inv_cost = sum(
             α[t] * (
-                sum(Pkinv[k] * sum(pkmax[k, τ] for τ in 1:t) for k in K) +
-                sum(Flinv[l] * Fmaxl[l] * sum(β[l, τ] for τ in 1:t) for l in L)
+                sum(Pkinv[k] * sum(pkmax[k, τ] for τ in T if τ <= t) for k in K) +
+                sum(Flinv[l] * Fmaxl[l] * sum(β[l, τ] for τ in T if τ <= t) for l in L)
             ) for t in T
         )
     else
         inv_cost = sum(
-            α[t] * sum(Pkinv[k] * sum(pkmax[k, τ] for τ in 1:t) for k in K)
+            α[t] * sum(Pkinv[k] * sum(pkmax[k, τ] for τ in T if τ <= t) for k in K)
             for t in T
         )
     end
@@ -41,7 +41,7 @@ function set_tgep_objective!(model, config::TEPConfig, sets, params)
     fixed_cost = sum(
         α[t] * (
             sum(Pgfixed[g] * Pgmax[g] for g in G) +
-            sum(Pkfixed[k] * sum(pkmax[k, τ] for τ in 1:t) for k in K)
+            sum(Pkfixed[k] * sum(pkmax[k, τ] for τ in T if τ <= t) for k in K)
         ) for t in T
     )
 

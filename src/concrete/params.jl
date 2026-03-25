@@ -9,7 +9,7 @@ function process_tgep_params(data, config::TEPConfig)
     # Unit bases
     Sb = config.per_unit ? 100.0 : 1.0                          # Power base (MW)
     PriceFactor = config.per_unit ? 1.0e3 : 1.0                 # Price scaling (to kCAD/MWh)
-    default_voll = 10_000.0                                     # Default Value of Lost Load ($/MWh)
+    default_voll = 1e4 / PriceFactor                       # Default Value of Lost Load ($/MWh)
 
     # Pre-process capacity factors 
     wind_cf = hasproperty(sce, :wind_cf) ? Dict(sce.hour .=> Float64.(sce.wind_cf)) : Dict()

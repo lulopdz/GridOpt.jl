@@ -20,7 +20,7 @@ DEFAULT_CONFIG = TEPConfig(
     false,              # integers
     false,              # enforce_netzero
     true,              # per_unit
-    10e6,               # bigM
+    1e50,               # bigM
     Gurobi.Optimizer    # solver
 )
 

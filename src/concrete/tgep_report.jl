@@ -9,16 +9,28 @@ function capacity_inv_df(model, sets, params)
     K, T = sets[:K], sets[:T]
     pkmax, pkinv = model[:pkmax], params[:Pkinv]
     Sb, PriceFactor = params[:Sbase], params[:PriceFactor]
+    α = params[:α]
 
     df = DataFrame([(; gen_id=k, year=t, 
-            capacity_added_mw=Sb * value(pkmax[k, t])) for k in K for t in T])
+        capacity_added_mw=Sb * value(pkmax[k, t])) for k in K for t in T])
     
     sort!(df, [:gen_id, :year])
     transform!(groupby(df, :gen_id), 
             :capacity_added_mw => cumsum => :cumulative_capacity_mw)
 
-    df.price_per_mw = [pkinv[k] * PriceFactor for k in df.gen_id]
+    # Keep both base and year-adjusted prices for transparent reporting.
+    df.base_price_per_mw = [pkinv[k] * PriceFactor for k in df.gen_id]
+    df.year_price_factor = [get(α, t, 1.0) for t in df.year]
+    df.price_per_mw = df.base_price_per_mw .* df.year_price_factor
     df.annual_investment_cost = df.cumulative_capacity_mw .* df.price_per_mw
+
+    # Round report outputs for readability.
+    df.capacity_added_mw = round.(df.capacity_added_mw, digits=2)
+    df.cumulative_capacity_mw = round.(df.cumulative_capacity_mw, digits=2)
+    df.base_price_per_mw = round.(df.base_price_per_mw, digits=2)
+    df.year_price_factor = round.(df.year_price_factor, digits=2)
+    df.price_per_mw = round.(df.price_per_mw, digits=2)
+    df.annual_investment_cost = round.(df.annual_investment_cost, digits=2)
     
     return df
 end
@@ -30,9 +42,9 @@ function gen_dispatch_df(model, sets, params)
     Sb = params[:Sbase]
     
     existing  = DataFrame([(; type="existing", id=g, year=t, hour=o, weight=ρ[o],
-            dispatch_mw=Sb * value(pg[g, t, o])) for g in G for t in T for o in O])
+        dispatch_mw=round(Sb * value(pg[g, t, o]), digits=2)) for g in G for t in T for o in O])
     candidate = DataFrame([(; type="candidate", id=k, year=t, hour=o, weight=ρ[o],
-            dispatch_mw=Sb * value(pk[k, t, o])) for k in K for t in T for o in O])
+        dispatch_mw=round(Sb * value(pk[k, t, o]), digits=2)) for k in K for t in T for o in O])
     
     return vcat(existing, candidate)
 end
@@ -46,11 +58,11 @@ function load_shedding_df(model, sets, params)
 
     df = DataFrame([(; 
         load_id = d, year = t, hour = o, weight = ρ[o],
-        shed_mw = Sb * value(ls[d, t, o]),
-        demand_mw = Sb * Pd[d] * Pdf[o] * Pdg[t]
+        shed_mw = round(Sb * value(ls[d, t, o]), digits=2),
+        demand_mw = round(Sb * Pd[d] * Pdf[o] * Pdg[t], digits=2)
     ) for d in D for t in T for o in O])
     
-    df.shed_pct = ifelse.(df.demand_mw .> 0, 100.0 .* df.shed_mw ./ df.demand_mw, 0.0)
+    df.shed_pct = ifelse.(df.demand_mw .> 0, round.(100.0 .* df.shed_mw ./ df.demand_mw, digits=2), 0.0)
     
     return df
 end
@@ -61,6 +73,7 @@ function line_inv_df(model, cfg::TEPConfig, sets, params)
     β = model[:β]
     Flinv, Fmaxl = params[:Flinv], params[:Fmaxl]
     Sb, PriceFactor = params[:Sbase], params[:PriceFactor]
+    α = params[:α]
     
     df = DataFrame([(; line_id=l, year=t, 
             built=(value(β[l, t]) > 0.5)) for l in L for t in T])
@@ -69,8 +82,17 @@ function line_inv_df(model, cfg::TEPConfig, sets, params)
     transform!(groupby(df, :line_id), 
             :built => (x -> cumsum(Int.(x)) .> 0) => :active)
     
-    df.line_cost = [Sb * PriceFactor * Flinv[l] * Fmaxl[l] for l in df.line_id]
+    # Keep both base and year-adjusted prices for transparent reporting.
+    df.base_line_cost = [Sb * PriceFactor * Flinv[l] * Fmaxl[l] for l in df.line_id]
+    df.year_price_factor = [get(α, t, 1.0) for t in df.year]
+    df.line_cost = df.base_line_cost .* df.year_price_factor
     df.annual_investment_cost = [a ? cost : 0.0 for (a, cost) in zip(df.active, df.line_cost)]
+
+    # Round report outputs for readability.
+    df.base_line_cost = round.(df.base_line_cost, digits=2)
+    df.year_price_factor = round.(df.year_price_factor, digits=2)
+    df.line_cost = round.(df.line_cost, digits=2)
+    df.annual_investment_cost = round.(df.annual_investment_cost, digits=2)
     
     return df
 end
@@ -86,9 +108,9 @@ function line_flow_df(model, cfg::TEPConfig, sets, params, year=nothing, hour=no
     os = isnothing(hour) ? O : [hour]
     
     existing  = DataFrame([(; type="existing", line_id=e, year=t, hour=o, 
-            flow_mw=Sb * value(f[e, t, o])) for e in E for t in ts for o in os])
+            flow_mw=round(Sb * value(f[e, t, o]), digits=2)) for e in E for t in ts for o in os])
     candidate = DataFrame([(; type="candidate", line_id=l, year=t, hour=o, 
-            flow_mw=Sb * value(fl[l, t, o])) for l in L for t in ts for o in os])
+            flow_mw=round(Sb * value(fl[l, t, o]), digits=2)) for l in L for t in ts for o in os])
     
     return vcat(existing, candidate)
 end
@@ -107,41 +129,41 @@ function cost_breakdown(model, cfg::TEPConfig, sets, params)
 
     op = DataFrame([(; 
         year = t,
-        existing_gen = Sb * α[t] * sum(ρ[o] * PriceFactor * Pgcost[g] * 
-                value(model[:pg][g, t, o]) for g in G, o in O),
-        candidate_gen = Sb * α[t] * sum(ρ[o] * PriceFactor * Pkcost[k] * 
-                value(model[:pk][k, t, o]) for k in K, o in O),
-        load_shed = Sb * α[t] * sum(ρ[o] * PriceFactor * VoLL[d] * 
-                value(model[:ls][d, t, o]) for d in sets[:D], o in O)
+        existing_gen = round(Sb * α[t] * sum(ρ[o] * PriceFactor * Pgcost[g] * 
+                value(model[:pg][g, t, o]) for g in G, o in O), digits=2),
+        candidate_gen = round(Sb * α[t] * sum(ρ[o] * PriceFactor * Pkcost[k] * 
+                value(model[:pk][k, t, o]) for k in K, o in O), digits=2),
+        load_shed = round(Sb * α[t] * sum(ρ[o] * PriceFactor * VoLL[d] * 
+                value(model[:ls][d, t, o]) for d in sets[:D], o in O), digits=2)
     ) for t in T])
-    op.total_op = op.existing_gen .+ op.candidate_gen
+    op.total_op = round.(op.existing_gen .+ op.candidate_gen, digits=2)
 
 
     inv = DataFrame([(;
         year = t,
-        gen_inv = Sb * α[t] * sum(PriceFactor * Pkinv[k] * 
-                sum(value(model[:pkmax][k, τ]) for τ in 1:t) for k in K),
-        line_inv = cfg.include_network ? Sb * α[t] * 
+        gen_inv = round(Sb * α[t] * sum(PriceFactor * Pkinv[k] * 
+                sum(value(model[:pkmax][k, τ]) for τ in 1:t) for k in K), digits=2),
+        line_inv = round(cfg.include_network ? Sb * α[t] * 
                 sum(PriceFactor * Flinv[l] * Fmaxl[l] * 
-                sum(value(model[:β][l, τ]) for τ in 1:t) for l in L) : 0.0
+                sum(value(model[:β][l, τ]) for τ in 1:t) for l in L) : 0.0, digits=2)
     ) for t in T])
-    inv.total_inv = inv.gen_inv .+ inv.line_inv
+    inv.total_inv = round.(inv.gen_inv .+ inv.line_inv, digits=2)
 
     fixed = DataFrame([(; 
         year = t,
-        existing_fixed = Sb * α[t] * 
-                sum(PriceFactor * Pgfixed[g] * Pgmax[g] for g in G),
-        candidate_fixed = Sb * α[t] * 
+        existing_fixed = round(Sb * α[t] * 
+                sum(PriceFactor * Pgfixed[g] * Pgmax[g] for g in G), digits=2),
+        candidate_fixed = round(Sb * α[t] * 
                 sum(PriceFactor * Pkfixed[k] * 
-                sum(value(model[:pkmax][k, τ]) for τ in 1:t) for k in K)
+                sum(value(model[:pkmax][k, τ]) for τ in 1:t) for k in K), digits=2)
     ) for t in T])
-    fixed.total_fixed = fixed.existing_fixed .+ fixed.candidate_fixed
+    fixed.total_fixed = round.(fixed.existing_fixed .+ fixed.candidate_fixed, digits=2)
 
     carbon = DataFrame([(; 
         year = t,
-        carbon_cost = has_em ? α[t] * 
+        carbon_cost = round(has_em ? α[t] * 
                 sum(ρ[o] * PriceFactor * Ctax[t] * 
-                value(model[:em][t, o]) for o in O) : 0.0
+                value(model[:em][t, o]) for o in O) : 0.0, digits=2)
     ) for t in T])
 
     total_op, total_load_shed, total_inv = sum(op.total_op), sum(op.load_shed), sum(inv.total_inv)
@@ -149,7 +171,7 @@ function cost_breakdown(model, cfg::TEPConfig, sets, params)
     total_cost = total_op + total_load_shed + total_inv + total_fixed + total_carbon
     summary = DataFrame(
         category=["Operating Cost", "Load Shedding Cost", "Investment Cost", "Fixed O&M Cost", "Carbon Cost", "Total Cost"],
-        value=[total_op, total_load_shed, total_inv, total_fixed, total_carbon, total_cost]
+        value=round.([total_op, total_load_shed, total_inv, total_fixed, total_carbon, total_cost], digits=2)
     )
     
     return (summary=summary, operating=op, investment=inv, fixed=fixed, carbon=carbon)

@@ -12,9 +12,9 @@ function add_generation_constraints!(model, sets, params)
     @constraint(model, [g in G, t in T, o in O], pg[g, t, o] <= Pgmax[g] * Pgcf[(g, o)])
     
     # Candidate generator limits
-    @constraint(model, [k in K, t in T, o in O], Pkmin[k] * sum(pkmax[k, τ] for τ in 1:t) <= pk[k, t, o])
-    @constraint(model, [k in K, t in T, o in O], pk[k, t, o] <= sum(pkmax[k, τ] for τ in 1:t) * Pkcf[(k, o)])
-    @constraint(model, [k in K, t in T], sum(pkmax[k, τ] for τ in 1:t) <= Pkmax[k])
+    @constraint(model, [k in K, t in T, o in O], Pkmin[k] * sum(pkmax[k, τ] for τ in T if τ <= t) <= pk[k, t, o])
+    @constraint(model, [k in K, t in T, o in O], pk[k, t, o] <= sum(pkmax[k, τ] for τ in T if τ <= t) * Pkcf[(k, o)])
+    @constraint(model, [k in K, t in T], sum(pkmax[k, τ] for τ in T if τ <= t) <= Pkmax[k])
 end
 
 # ==============================================================================
@@ -24,7 +24,7 @@ function add_investment_constraints!(model, sets)
     β = model[:β]
     
     # Line can be built at most once across all years
-    @constraint(model, [l in L, t in T], sum(β[l, τ] for τ in 1:t) <= 1)
+    @constraint(model, [l in L, t in T], sum(β[l, τ] for τ in T if τ <= t) <= 1)
 end
 
 # ==============================================================================

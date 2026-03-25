@@ -31,10 +31,10 @@ function process_tgep_sets(data)
     Ωd = Dict(b => items_b(load, b) for b in B)
     
     # Line topology
-    fr  = Dict(e => Bmap[line.node_code_st[e]] for e in E)
-    to  = Dict(e => Bmap[line.node_code_en[e]] for e in E)
-    frn = Dict(l => Bmap[tcand.node_code_st[l]] for l in L)
-    ton = Dict(l => Bmap[tcand.node_code_en[l]] for l in L)
+    fr  = Dict(r.id => Bmap[r.node_code_st] for r in eachrow(line))
+    to  = Dict(r.id => Bmap[r.node_code_en] for r in eachrow(line))
+    frn = Dict(r.id => Bmap[r.node_code_st] for r in eachrow(tcand))
+    ton = Dict(r.id => Bmap[r.node_code_en] for r in eachrow(tcand))
     
     return Dict{Symbol, Any}(
         :B => B,

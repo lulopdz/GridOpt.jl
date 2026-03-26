@@ -27,6 +27,9 @@ function load_tgep_data(data_path::String, project::String)
         # Technology data (if needed)
         :gtech => read_df("gtech"),
         :ttech => read_df("ttech"),
+        # Storage infrastructure
+        :sto => read_df("sto"),
+        :stocand => read_df("stocand"),
     )
 end
 

@@ -38,6 +38,31 @@ function add_investment_constraints!(model, sets)
     @constraint(model, [l in L, t in T], sum(β[l, τ] for τ in T if τ <= t) <= 1)
 end
 
+
+# ==============================================================================
+# Add Storage Constraints
+function add_storage_constraints!(model, sets, params)
+    S, T, O = sets[:S], sets[:T], sets[:O]
+    Sk = sets[:Sk]
+    soc, pch, pdis = model[:soc], model[:pch], model[:pdis]
+    η_ch = params[:η_ch]
+    η_dis = params[:η_dis]
+    Emax = params[:Emax]
+    Einit = params[:Einit]
+    Pscmax = params[:Pscmax]
+    Psdmax = params[:Psdmax]
+
+    # Storage operation constraints
+    @constraint(model, [s in S, t in T, o in O], soc[s, t, o] <= Emax[s])
+    @constraint(model, [s in S, t in T, o in O], pch[s, t, o] <= Pscmax[s])
+    @constraint(model, [s in S, t in T, o in O], pdis[s, t, o] <= Psdmax[s])
+    
+    # State of charge dynamics (assuming hourly time steps)
+    @constraint(model, [s in S, t in T, o in [1]], soc[s, t, o] == Einit[s] * Emax[s]) # Initial SOC
+    @constraint(model, [s in S, t in T, o in O[2:end]], 
+        soc[s, t, o] == soc[s, t, o-1] + η_ch[s] * pch[s, t, o-1] - (1/η_dis[s]) * pdis[s, t, o-1])
+end
+
 # ==============================================================================
 # Add Emissions Constraints and Net-Zero Policy
 function add_emissions_constraints!(model, cfg::TEPConfig, sets, params)
@@ -67,11 +92,12 @@ function add_network_constraints!(model, config::TEPConfig, sets, params)
     B, D, E, L, T, O = sets[:B], sets[:D], sets[:E], sets[:L], sets[:T], sets[:O]
     G, K = sets[:G], sets[:K]
     Slack = sets[:Slack]
-    Ωg, Ωk, Ωd = sets[:Ωg], sets[:Ωk], sets[:Ωd]
+    Ωg, Ωk, Ωd, Ωs = sets[:Ωg], sets[:Ωk], sets[:Ωd], sets[:Ωs]
     fr, to, frn, ton = sets[:fr], sets[:to], sets[:frn], sets[:ton]
     Pdf, Pdg = params[:Pdf], params[:Pdg]
     pg, pk, ls = model[:pg], model[:pk], model[:ls]
     θ, f, fl, β = model[:θ], model[:f], model[:fl], model[:β]
+    pch, pdis = model[:pch], model[:pdis]
     xe, xl, Fmax, Fmaxl, Pd = params[:xe], params[:xl], params[:Fmax], params[:Fmaxl], params[:Pd]
     M = config.bigM
     Sb = params[:Sbase]
@@ -80,7 +106,8 @@ function add_network_constraints!(model, config::TEPConfig, sets, params)
     @constraint(model, demand[b in B, t in T, o in O],
         sum(pg[g, t, o] for g in Ωg[b]) + sum(pk[k, t, o] for k in Ωk[b]) +
         sum(f[e, t, o] for e in E if to[e] == b)   - sum(f[e, t, o] for e in E if fr[e] == b) +
-        sum(fl[l, t, o] for l in L if ton[l] == b) - sum(fl[l, t, o] for l in L if frn[l] == b)
+        sum(fl[l, t, o] for l in L if ton[l] == b) - sum(fl[l, t, o] for l in L if frn[l] == b) + 
+        sum(pdis[s, t, o] for s in Ωs[b]) - sum(pch[s, t, o] for s in Ωs[b])
         == sum(Pd[d]*Pdf[o]*Pdg[t] for d in Ωd[b]) - sum(ls[d, t, o] for d in Ωd[b])
     )
 
@@ -116,7 +143,9 @@ function add_single_node_constraints!(model, sets, params)
     
     # Simple power balance: total generation = total load
     @constraint(model, demand[t in T, o in O],
-        sum(pg[g, t, o] for g in G) + sum(pk[k, t, o] for k in K) + sum(ls[d, t, o] for d in D) == sum(Pd[d]*Pdf[o]*Pdg[t] for d in D)
+        sum(pg[g, t, o] for g in G) + sum(pk[k, t, o] for k in K)  + 
+        sum(pdis[s, t, o] for s in Ωs[b]) - sum(pch[s, t, o] for s in Ωs[b])
+        == sum(Pd[d]*Pdf[o]*Pdg[t] for d in D) - sum(ls[d, t, o] for d in D) 
     )
 
     @constraint(model, [d in D, t in T, o in O], ls[d, t, o] <= Pd[d] * Pdf[o] * Pdg[t])

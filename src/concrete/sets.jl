@@ -4,6 +4,7 @@
 function process_tgep_sets(data)
     nodes, gen, load, line = data[:nodes], data[:gen], data[:load], data[:line]
     gcand, tcand = data[:gcand], data[:tcand]
+    sto, stocand = data[:sto], data[:stocand]
     econ, sce = data[:econ], data[:sce]
     
     # Sets and Indices
@@ -15,6 +16,9 @@ function process_tgep_sets(data)
     K = gcand[!, :id]
     L = tcand[!, :id]
     
+    S = sto[!, :id]
+    Sk = stocand[!, :id]
+
     T = econ[!, :t]
     O = sce[!, :hour]
     
@@ -33,7 +37,9 @@ function process_tgep_sets(data)
     Ωg = Dict(b => items_b(gen, b) for b in B)
     Ωk = Dict(b => items_b(gcand, b) for b in B)
     Ωd = Dict(b => items_b(load, b) for b in B)
-    
+    Ωs = Dict(b => items_b(sto, b) for b in B)
+    Ωsk = Dict(b => items_b(stocand, b) for b in B)
+
     # Line topology
     fr  = Dict(r.id => Bmap[r.node_code_st] for r in eachrow(line))
     to  = Dict(r.id => Bmap[r.node_code_en] for r in eachrow(line))
@@ -47,12 +53,16 @@ function process_tgep_sets(data)
         :E => E,
         :K => K,
         :L => L,
+        :S => S,
+        :Sk => Sk,
         :T => T,
         :O => O,
         :Slack => Slack,
         :Ωg => Ωg,
         :Ωk => Ωk,
         :Ωd => Ωd,
+        :Ωs => Ωs,
+        :Ωsk => Ωsk,
         :fr => fr,
         :to => to,
         :frn => frn,

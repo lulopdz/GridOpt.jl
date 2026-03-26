@@ -22,6 +22,9 @@ function build_tgep_model(config::TEPConfig, data)
     # Add constraints
     add_generation_constraints!(model, sets, params)
     add_investment_constraints!(model, sets)
+
+    # Add storage constraints
+    add_storage_constraints!(model, sets, params)
     
     if config.include_network
         add_network_constraints!(model, config, sets, params)

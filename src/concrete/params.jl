@@ -5,6 +5,7 @@ function process_tgep_params(data, config::TEPConfig)
     gcand, tcand = data[:gcand], data[:tcand]
     gtech, ttech = data[:gtech], data[:ttech]
     econ, sce = data[:econ], data[:sce]
+    sto, stocand = data[:sto], data[:stocand]
 
     # Unit bases
     Sb = config.per_unit ? 100.0 : 1.0                          # Power base (MW)
@@ -63,6 +64,14 @@ function process_tgep_params(data, config::TEPConfig)
         :Pkem   => Dict(r.id => em_val(r) for r in eachrow(gcand)),
         :Pktype => Dict(gcand.id .=> gcand.gen_type),
         :Pkcf   => Dict((k.id, h) => get_cf(k.gen_type, h, wind_cf, solar_cf) for k in eachrow(gcand), h in sce.hour),
+
+        # Storage parameters 
+        :Emax   => Dict(sto.id .=> sto.energy_mwh ./ Sb),
+        :Pscmax => Dict(sto.id .=> sto.ch_capacity_mw ./ Sb),
+        :Psdmax => Dict(sto.id .=> sto.dis_capacity_mw ./ Sb),
+        :Einit  => Dict(sto.id .=> Float64.(sto.soc_init)),   # fraction [0,1]
+        :η_ch   => Dict(sto.id .=> Float64.(sto.ch_eff)),
+        :η_dis  => Dict(sto.id .=> Float64.(sto.dis_eff)),
 
         # Network (Lines and Load)
         :Pd   => Dict(load.id .=> load.demand_mw ./ Sb),

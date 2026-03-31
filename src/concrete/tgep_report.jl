@@ -6,8 +6,9 @@ include("../utils/plot_defaults.jl")
 set_theme()
 
 function capacity_inv_df(model, sets, params)
-    K, T = sets[:K], sets[:T]
-    pkmax, pkinv = model[:pkmax], params[:Pkinv]
+    K, Sk, T = sets[:K], sets[:Sk], sets[:T]
+    pkmax, ekmax = model[:pkmax], model[:ekmax]
+    Pkinv, Skinv = params[:Pkinv], params[:Skinv]
     Sb, PriceFactor = params[:Sbase], params[:PriceFactor]
     α = params[:α]
 
@@ -19,7 +20,7 @@ function capacity_inv_df(model, sets, params)
             :capacity_added_mw => cumsum => :cumulative_capacity_mw)
 
     # Keep both base and year-adjusted prices for transparent reporting.
-    df.base_price_per_mw = [pkinv[k] * PriceFactor for k in df.gen_id]
+    df.base_price_per_mw = [Pkinv[k] * PriceFactor for k in df.gen_id]
     df.year_price_factor = [get(α, t, 1.0) for t in df.year]
     df.price_per_mw = df.base_price_per_mw .* df.year_price_factor
     df.annual_investment_cost = df.cumulative_capacity_mw .* df.price_per_mw
@@ -32,6 +33,37 @@ function capacity_inv_df(model, sets, params)
     df.price_per_mw = round.(df.price_per_mw, digits=2)
     df.annual_investment_cost = round.(df.annual_investment_cost, digits=2)
     
+    return df
+end
+
+function storage_inv_df(model, sets, params)
+    Sk, T = sets[:Sk], sets[:T]
+    ekmax = model[:ekmax]
+    Skinv = params[:Skinv]
+    Sb, PriceFactor = params[:Sbase], params[:PriceFactor]
+    α = params[:α]
+
+    df = DataFrame([(; storage_id=s, year=t,
+        energy_added_mwh=Sb * value(ekmax[s, t])) for s in Sk for t in T])
+
+    sort!(df, [:storage_id, :year])
+    transform!(groupby(df, :storage_id),
+            :energy_added_mwh => cumsum => :cumulative_energy_mwh)
+
+    # Keep both base and year-adjusted prices for transparent reporting.
+    df.base_price_per_mwh = [Skinv[s] * PriceFactor for s in df.storage_id]
+    df.year_price_factor = [get(α, t, 1.0) for t in df.year]
+    df.price_per_mwh = df.base_price_per_mwh .* df.year_price_factor
+    df.annual_investment_cost = df.cumulative_energy_mwh .* df.price_per_mwh
+
+    # Round report outputs for readability.
+    df.energy_added_mwh = round.(df.energy_added_mwh, digits=2)
+    df.cumulative_energy_mwh = round.(df.cumulative_energy_mwh, digits=2)
+    df.base_price_per_mwh = round.(df.base_price_per_mwh, digits=2)
+    df.year_price_factor = round.(df.year_price_factor, digits=2)
+    df.price_per_mwh = round.(df.price_per_mwh, digits=2)
+    df.annual_investment_cost = round.(df.annual_investment_cost, digits=2)
+
     return df
 end
 
@@ -117,9 +149,9 @@ end
 
 
 function cost_breakdown(model, cfg::TEPConfig, sets, params)
-    G, K, L, T, O = sets[:G], sets[:K], sets[:L], sets[:T], sets[:O]
+    G, K, Sk, L, T, O = sets[:G], sets[:K], sets[:Sk], sets[:L], sets[:T], sets[:O]
     α, ρ = params[:α], params[:ρ]
-    Pgcost, Pkcost, Pkinv = params[:Pgcost], params[:Pkcost], params[:Pkinv]
+    Pgcost, Pkcost, Pkinv, Skinv = params[:Pgcost], params[:Pkcost], params[:Pkinv], params[:Skinv]
     Pgfixed, Pkfixed = params[:Pgfixed], params[:Pkfixed]
     VoLL, Pgmax = params[:VoLL], params[:Pgmax]
     Flinv, Fmaxl = params[:Flinv], params[:Fmaxl]
@@ -143,11 +175,13 @@ function cost_breakdown(model, cfg::TEPConfig, sets, params)
         year = t,
         gen_inv = round(Sb * α[t] * sum(PriceFactor * Pkinv[k] * 
                 sum(value(model[:pkmax][k, τ]) for τ in 1:t) for k in K), digits=2),
+        storage_inv = round(Sb * α[t] * sum(PriceFactor * Skinv[s] *
+            sum(value(model[:ekmax][s, τ]) for τ in 1:t) for s in Sk), digits=2),
         line_inv = round(cfg.include_network ? Sb * α[t] * 
                 sum(PriceFactor * Flinv[l] * Fmaxl[l] * 
                 sum(value(model[:β][l, τ]) for τ in 1:t) for l in L) : 0.0, digits=2)
     ) for t in T])
-    inv.total_inv = round.(inv.gen_inv .+ inv.line_inv, digits=2)
+        inv.total_inv = round.(inv.gen_inv .+ inv.storage_inv .+ inv.line_inv, digits=2)
 
     fixed = DataFrame([(; 
         year = t,
@@ -200,6 +234,7 @@ function save_results(model, cfg::TEPConfig, sets, params, out_dir::String)
     mkpath(joinpath(out_dir, "csv"))
     # Core outputs used for post-analysis
     CSV.write(joinpath(out_dir, "csv", "cap_gen_inv.csv"), capacity_inv_df(model, sets, params))
+    CSV.write(joinpath(out_dir, "csv", "cap_storage_inv.csv"), storage_inv_df(model, sets, params))
     CSV.write(joinpath(out_dir, "csv", "gen_dispatch.csv"), gen_dispatch_df(model, sets, params))
     CSV.write(joinpath(out_dir, "csv", "load_shedding.csv"), load_shedding_df(model, sets, params))
 
@@ -262,6 +297,30 @@ function summarize_results(model, cfg::TEPConfig, sets, params; save_to::Union{S
             sort!(yearly_cap, :year)
             for row in eachrow(yearly_cap)
                 println("  Year $(row.year): $(row.units_built) builds, $(round(row.added_mw, digits=2)) MW added, new investment \$$(round(row.new_investment_cost, digits=2))")
+            end
+        end
+    end
+
+    storage = storage_inv_df(model, sets, params)
+    built_storage = filter(row -> row.energy_added_mwh > 0.01, storage)
+    if nrow(built_storage) > 0
+        println("\n🔋 STORAGE CAPACITY INVESTMENTS")
+        println("="^50)
+        if nrow(built_storage) <= 10
+            for row in eachrow(built_storage)
+                println("  Year $(row.year), Storage $(row.storage_id): $(round(row.energy_added_mwh, digits=2)) MWh (\$$(round(row.annual_investment_cost, digits=2)))")
+            end
+        else
+            println("  $(nrow(built_storage)) build decisions found. Showing yearly summary:")
+            yearly_storage = combine(
+                groupby(built_storage, :year),
+                :storage_id => length => :units_built,
+                :energy_added_mwh => sum => :added_mwh,
+                :annual_investment_cost => sum => :new_investment_cost
+            )
+            sort!(yearly_storage, :year)
+            for row in eachrow(yearly_storage)
+                println("  Year $(row.year): $(row.units_built) builds, $(round(row.added_mwh, digits=2)) MWh added, new investment \$$(round(row.new_investment_cost, digits=2))")
             end
         end
     end
@@ -532,8 +591,8 @@ function save_plots(model, cfg::TEPConfig, sets, params, dir::String)
 end
 
 function report_solution(model, cfg::TEPConfig, sets, params)
-    G, K, L, E, T, O = sets[:G], sets[:K], sets[:L], sets[:E], sets[:T], sets[:O]
-    pg, pk, pkmax, β = model[:pg], model[:pk], model[:pkmax], model[:β]
+    G, K, Sk, L, E, T, O = sets[:G], sets[:K], sets[:Sk], sets[:L], sets[:E], sets[:T], sets[:O]
+    pg, pk, pkmax, ekmax, β = model[:pg], model[:pk], model[:pkmax], model[:ekmax], model[:β]
     t, o = last(T), first(O)
 
     println("")
@@ -547,6 +606,12 @@ function report_solution(model, cfg::TEPConfig, sets, params)
         cap = round(value(sum(pkmax[k, τ] for τ in 1:t)), digits=2)
         disp = round(value(pk[k, t, o]), digits=2)
         println("  Cand Gen $k: $disp MW (Capacity: $cap MW)")
+    end
+
+    println("Candidate storage (t=$t):")
+    for s in Sk
+        ecap = round(value(sum(ekmax[s, τ] for τ in 1:t)), digits=2)
+        println("  Cand Storage $s: Capacity: $ecap MWh")
     end
 
     if cfg.include_network

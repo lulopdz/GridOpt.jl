@@ -52,6 +52,12 @@ function add_storage_constraints!(model, sets, params)
     Pscmax = params[:Pscmax]
     Psdmax = params[:Psdmax]
 
+    Ekmax = params[:Ekmax]
+    Psckmax = params[:Psckmax]
+    Psdkmax = params[:Psdkmax]
+    η_chk = params[:η_chk]
+    η_disk = params[:η_disk]
+
     # Storage operation constraints
     @constraint(model, [s in S, t in T, o in O], soc[s, t, o] <= Emax[s])
     @constraint(model, [s in S, t in T, o in O], pch[s, t, o] <= Pscmax[s])
@@ -61,6 +67,27 @@ function add_storage_constraints!(model, sets, params)
     @constraint(model, [s in S, t in T, o in [1]], soc[s, t, o] == Einit[s] * Emax[s]) # Initial SOC
     @constraint(model, [s in S, t in T, o in O[2:end]], 
         soc[s, t, o] == soc[s, t, o-1] + η_ch[s] * pch[s, t, o-1] - (1/η_dis[s]) * pdis[s, t, o-1])
+
+    # Expansion constraints for storage (if candidate storage is included)
+    ekmax = model[:ekmax]
+    psckmax = model[:psckmax]
+    psdkhmax = model[:psdkhmax]
+    sock = model[:sock]
+    pchk = model[:pchk]
+    pdisk = model[:pdisk]
+
+    @constraint(model, [s in Sk, t in T], sum(ekmax[s, τ] for τ in T if τ <= t) <= Ekmax[s])
+    @constraint(model, [s in Sk, t in T], sum(psckmax[s, τ] for τ in T if τ <= t) <= Psckmax[s])
+    @constraint(model, [s in Sk, t in T], sum(psdkhmax[s, τ] for τ in T if τ <= t) <= Psdkmax[s])
+
+    @constraint(model, [s in Sk, t in T, o in O], sock[s, t, o] <= sum(ekmax[s, τ] for τ in T if τ <= t))
+    @constraint(model, [s in Sk, t in T, o in O], pchk[s, t, o] <= sum(psckmax[s, τ] for τ in T if τ <= t))
+    @constraint(model, [s in Sk, t in T, o in O], pdisk[s, t, o] <= sum(psdkhmax[s, τ] for τ in T if τ <= t))
+
+    @constraint(model, [s in Sk, t in T, o in [1]], 
+        sock[s, t, o] == 0.0) # Assuming new storage starts empty
+    @constraint(model, [s in Sk, t in T, o in O[2:end]], 
+        sock[s, t, o] == sock[s, t, o-1] + η_chk[s] * pchk[s, t, o-1] - (1/η_disk[s]) * pdisk[s, t, o-1])
 end
 
 # ==============================================================================
@@ -92,12 +119,13 @@ function add_network_constraints!(model, config::TEPConfig, sets, params)
     B, D, E, L, T, O = sets[:B], sets[:D], sets[:E], sets[:L], sets[:T], sets[:O]
     G, K = sets[:G], sets[:K]
     Slack = sets[:Slack]
-    Ωg, Ωk, Ωd, Ωs = sets[:Ωg], sets[:Ωk], sets[:Ωd], sets[:Ωs]
+    Ωg, Ωk, Ωd, Ωs, Ωsk = sets[:Ωg], sets[:Ωk], sets[:Ωd], sets[:Ωs], sets[:Ωsk]
     fr, to, frn, ton = sets[:fr], sets[:to], sets[:frn], sets[:ton]
     Pdf, Pdg = params[:Pdf], params[:Pdg]
     pg, pk, ls = model[:pg], model[:pk], model[:ls]
     θ, f, fl, β = model[:θ], model[:f], model[:fl], model[:β]
     pch, pdis = model[:pch], model[:pdis]
+    pchk, pdisk = model[:pchk], model[:pdisk]
     xe, xl, Fmax, Fmaxl, Pd = params[:xe], params[:xl], params[:Fmax], params[:Fmaxl], params[:Pd]
     M = config.bigM
     Sb = params[:Sbase]
@@ -107,7 +135,8 @@ function add_network_constraints!(model, config::TEPConfig, sets, params)
         sum(pg[g, t, o] for g in Ωg[b]) + sum(pk[k, t, o] for k in Ωk[b]) +
         sum(f[e, t, o] for e in E if to[e] == b)   - sum(f[e, t, o] for e in E if fr[e] == b) +
         sum(fl[l, t, o] for l in L if ton[l] == b) - sum(fl[l, t, o] for l in L if frn[l] == b) + 
-        sum(pdis[s, t, o] for s in Ωs[b]) - sum(pch[s, t, o] for s in Ωs[b])
+        sum(pdis[s, t, o] for s in Ωs[b]) - sum(pch[s, t, o] for s in Ωs[b]) +
+        sum(pdisk[s, t, o] for s in Ωsk[b]) - sum(pchk[s, t, o] for s in Ωsk[b])
         == sum(Pd[d]*Pdf[o]*Pdg[t] for d in Ωd[b]) - sum(ls[d, t, o] for d in Ωd[b])
     )
 
@@ -138,13 +167,16 @@ end
 function add_single_node_constraints!(model, sets, params)
     G, K, D, T, O = sets[:G], sets[:K], sets[:D], sets[:T], sets[:O]
     pg, pk, ls = model[:pg], model[:pk], model[:ls]
+    pchk, pdisk = model[:pchk], model[:pdisk]
+    pdis, pch = model[:pdis], model[:pch]
     Pdf, Pdg = params[:Pdf], params[:Pdg]
     Pd = params[:Pd]
     
     # Simple power balance: total generation = total load
     @constraint(model, demand[t in T, o in O],
         sum(pg[g, t, o] for g in G) + sum(pk[k, t, o] for k in K)  + 
-        sum(pdis[s, t, o] for s in Ωs[b]) - sum(pch[s, t, o] for s in Ωs[b])
+        sum(pdis[s, t, o] for s in Ωs[b]) - sum(pch[s, t, o] for s in Ωs[b]) +
+        sum(pchk[s, t, o] for s in Ωsk[b]) - sum(pdisk[s, t, o] for s in Ωsk[b])
         == sum(Pd[d]*Pdf[o]*Pdg[t] for d in D) - sum(ls[d, t, o] for d in D) 
     )
 

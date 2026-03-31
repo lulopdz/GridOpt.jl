@@ -15,6 +15,10 @@ function add_tgep_vars!(m, cfg::TEPConfig, sets)
     @variable(m, pch[s in S, t in T, o in O] >= 0)
     @variable(m, pdis[s in S, t in T, o in O] >= 0)
 
+    @variable(m, sock[s in Sk, t in T, o in O] >= 0)
+    @variable(m, pchk[s in Sk, t in T, o in O] >= 0)
+    @variable(m, pdisk[s in Sk, t in T, o in O] >= 0)
+
     # Emissions accounting variables (tCO2/h representative block).
     @variable(m, em_e[g in G, t in T, o in O])
     @variable(m, em_k[k in K, t in T, o in O])
@@ -23,7 +27,12 @@ function add_tgep_vars!(m, cfg::TEPConfig, sets)
     # Investment variables
     @variable(m, pkmax[k in K, t in T] >= 0)
     @variable(m, β[l in L, t in T], Bin)
-    
+
+    # Expansion on storage
+    @variable(m, ekmax[s in Sk, t in T] >= 0)
+    @variable(m, psckmax[s in Sk, t in T] >= 0)
+    @variable(m, psdkhmax[s in Sk, t in T] >= 0)
+
     # Network variables
     if cfg.include_network
         @variable(m, θ[b in B, t in T, o in O])

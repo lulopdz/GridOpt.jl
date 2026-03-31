@@ -73,6 +73,14 @@ function process_tgep_params(data, config::TEPConfig)
         :η_ch   => Dict(sto.id .=> Float64.(sto.ch_eff)),
         :η_dis  => Dict(sto.id .=> Float64.(sto.dis_eff)),
 
+        # Candidate storage parameters
+        :Ekmax   => Dict(stocand.id .=> stocand.energy_mwh ./ Sb),
+        :Psckmax => Dict(stocand.id .=> stocand.ch_capacity_mw ./ Sb),
+        :Psdkmax => Dict(stocand.id .=> stocand.dis_capacity_mw ./ Sb),
+        :η_chk  => Dict(stocand.id .=> Float64.(stocand.ch_eff)),
+        :η_disk => Dict(stocand.id .=> Float64.(stocand.dis_eff)),
+        :Skinv => Dict(r.id => inv_val(r) / PriceFactor for r in eachrow(stocand)),
+
         # Network (Lines and Load)
         :Pd   => Dict(load.id .=> load.demand_mw ./ Sb),
         :VoLL => Dict(load.id .=> (hasproperty(load, :cost_LS) ? load.cost_LS / PriceFactor : default_voll)),

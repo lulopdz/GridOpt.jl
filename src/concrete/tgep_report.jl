@@ -462,7 +462,7 @@ function plot_total_cap_type(model, cfg::TEPConfig, sets, params; pdf_path::Unio
 end
 
 function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Union{String,Nothing}=nothing)
-    G, K, D, T, O = sets[:G], sets[:K], sets[:D], sets[:T], sets[:O]
+    G, K, D, S, Sk, T, O = sets[:G], sets[:K], sets[:D], sets[:S], sets[:Sk], sets[:T], sets[:O]
     sb = cfg.per_unit ? 100.0 : 1.0
     hrs = collect(O)
 
@@ -476,6 +476,8 @@ function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Uni
     isempty(typs) && (typs = ["none"])
     pdf, pdg = params[:Pdf], params[:Pdg]
     stack_labels = [typ == "none" ? "N/A" : typ for typ in typs]
+    push!(stack_labels, "Storage Discharge")
+    push!(stack_labels, "Storage Charge")
     push!(stack_labels, "Load Shed")
     lbls = permutedims(stack_labels)
 
@@ -487,7 +489,7 @@ function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Uni
     demand_base = [sum(params[:Pd][d] * pdf[o] for d in D; init=0.0) * sb for o in hrs]
 
     plots = Dict{Any, Any}()
-    y_max = maximum(demand_base; init=0.0) * maximum(values(pdg); init=1.0) * 1.2
+    demand_max = maximum(demand_base; init=0.0) * maximum(values(pdg); init=1.0)
 
     if !isnothing(pdf_path)
         mkpath(dirname(pdf_path))
@@ -503,8 +505,28 @@ function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Uni
         ]
 
         dem = [demand_base[i] * pdg[t] for i in eachindex(hrs)]
+        dis_sto = [
+            (
+                sum((value(model[:pdis][s, t, o]) for s in S); init=0.0) +
+                sum((value(model[:pdisk][s, t, o]) for s in Sk); init=0.0)
+            ) * sb
+            for o in hrs
+        ]
+        ch_sto = [
+            -(
+                sum((value(model[:pch][s, t, o]) for s in S); init=0.0) +
+                sum((value(model[:pchk][s, t, o]) for s in Sk); init=0.0)
+            ) * sb
+            for o in hrs
+        ]
         shed = [sum(value(model[:ls][d, t, o]) for d in D; init=0.0) * sb for o in hrs]
-        disp_mat = hcat(disp_core, shed)
+        disp_mat = hcat(disp_core, dis_sto, ch_sto, shed)
+
+        # Include negative charging in axis limits so storage operation is visible.
+        pos_stack = [sum(max(v, 0.0) for v in disp_mat[i, :]) for i in eachindex(hrs)]
+        neg_stack = [sum(min(v, 0.0) for v in disp_mat[i, :]) for i in eachindex(hrs)]
+        y_max = max(maximum(pos_stack; init=0.0), maximum(dem; init=0.0), demand_max) * 1.2
+        y_min = min(minimum(neg_stack; init=0.0) * 1.2, 0.0)
 
         p = areaplot(
             hrs, disp_mat,
@@ -512,7 +534,7 @@ function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Uni
             legend=:outertop, lw=0,
             legendcolumns=4,
             xlabel="Hour", ylabel="Dispatch (MW)", yformatter=:plain,
-            ylims=(0, y_max)
+            ylims=(y_min, y_max)
         )
 
         plot!(

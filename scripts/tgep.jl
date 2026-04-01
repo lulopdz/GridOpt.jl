@@ -16,11 +16,13 @@ include("../src/concrete/tgep_report.jl")
 # ==============================================================================
 # Default configurations
 DEFAULT_CONFIG = TEPConfig(
-    true,               # network
+    true,               # include_network
     false,              # integers
     false,              # enforce_netzero
-    true,              # per_unit
-    1e25,               # bigM
+    true,               # include_carbon_tax
+    :regional,          # cf_resolution (:system, :regional, :nodal)
+    true,               # per_unit
+    1e25,                # bigM
     Gurobi.Optimizer    # solver
 )
 
@@ -41,6 +43,7 @@ solve_tgep!(model, config, sets, params)
 
 # Report_solution(model, config, sets, params)
 save_path = joinpath(pwd(), pkg, "results", proj)
+
 summarize_results(model, config, sets, params; save_to=save_path)
 save_plots(model, config, sets, params, save_path)
 
@@ -49,6 +52,7 @@ println("TGEP RUN COMPLETED")
 println("="^50)
 println("Project: $proj")
 println("Network included: $(config.include_network)")
-println("Enforce net-zero: $(config.enforce_netzero)")
+println("Carbon tax applied: $(config.include_carbon_tax)")
+println("Capacity factor resolution: $(config.cf_resolution)")
 println("Per unit system: $(config.per_unit)")
 println("Results saved in: $save_path")

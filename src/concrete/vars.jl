@@ -9,7 +9,7 @@ function add_investment_vars!(m, cfg::TEPConfig, sets)
     # Storage expansion (Energy capacity, charge/discharge capacity)
     @variable(m, ekmax[s in Sk, t in T] >= 0)
     @variable(m, psckmax[s in Sk, t in T] >= 0)
-    @variable(m, psdkhmax[s in Sk, t in T] >= 0)
+    @variable(m, psdkmax[s in Sk, t in T] >= 0)
 
     # Network expansion
     if cfg.include_network

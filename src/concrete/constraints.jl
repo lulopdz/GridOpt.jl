@@ -59,15 +59,29 @@ function add_storage_constraints!(model, sets, params)
     Psckmax, Psdkmax = params[:Psckmax], params[:Psdkmax]
     η_chk, η_disk = params[:η_chk], params[:η_disk]
 
+    # ==========================================================================
+    # Cycle Definitions for Representative Days
+    cl = 24
+    
+    # Example: If O = 1:72, sth = [1, 25, 49], edh = [24, 48, 72]
+    sth = 1:cl:length(O)
+    edh = cl:cl:length(O)
+    days = length(sth)
+
     # Storage operation constraints
     @constraint(model, [s in S, t in T, o in O], soc[s, t, o] <= Emax[s])
     @constraint(model, [s in S, t in T, o in O], pch[s, t, o] <= Pscmax[s])
     @constraint(model, [s in S, t in T, o in O], pdis[s, t, o] <= Psdmax[s])
     
-    # State of charge dynamics (assuming hourly time steps)
-    @constraint(model, [s in S, t in T, o in [1]], soc[s, t, o] == Einit[s] * Emax[s]) 
-    @constraint(model, [s in S, t in T, o in O[2:end]], 
+    # @constraint(model, [s in S, t in T, o in [1]], soc[s, t, o] == Einit[s] * Emax[s]) 
+    # 1. Intra-day dynamics (Applies to hours 2-24, 26-48, etc.)
+    @constraint(model, [s in S, t in T, o in O; !(o in sth)], 
         soc[s, t, o] == soc[s, t, o-1] + η_ch[s] * pch[s, t, o-1] - (1/η_dis[s]) * pdis[s, t, o-1])
+
+    # 2. Daily wrap-around (Links hour 1 to 24, 25 to 48, etc.)
+    @constraint(model, [s in S, t in T, d in 1:days], 
+        soc[s, t, sth[d]] == soc[s, t, edh[d]] + η_ch[s] * pch[s, t, edh[d]] - (1/η_dis[s]) * pdis[s, t, edh[d]])
+
 
     # Expansion constraints for storage (if candidate storage is included)
     ekmax = model[:ekmax]
@@ -87,9 +101,14 @@ function add_storage_constraints!(model, sets, params)
     @constraint(model, [s in Sk, t in T, o in O], pchk[s, t, o] <= cum_psckmax[s, t])
     @constraint(model, [s in Sk, t in T, o in O], pdisk[s, t, o] <= cum_psdkmax[s, t])
 
-    @constraint(model, [s in Sk, t in T, o in [1]], sock[s, t, o] == 0.0) 
-    @constraint(model, [s in Sk, t in T, o in O[2:end]], 
+    # @constraint(model, [s in Sk, t in T, o in [1]], sock[s, t, o] == 0.0) 
+    # 1. Intra-day dynamics for candidate storage
+    @constraint(model, [s in Sk, t in T, o in O; !(o in sth)], 
         sock[s, t, o] == sock[s, t, o-1] + η_chk[s] * pchk[s, t, o-1] - (1/η_disk[s]) * pdisk[s, t, o-1])
+
+    # 2. Daily wrap-around for candidate storage
+    @constraint(model, [s in Sk, t in T, d in 1:days], 
+        sock[s, t, sth[d]] == sock[s, t, edh[d]] + η_chk[s] * pchk[s, t, edh[d]] - (1/η_disk[s]) * pdisk[s, t, edh[d]])
 end
 
 # ==============================================================================
@@ -145,11 +164,11 @@ function add_network_constraints!(model, config::TEPConfig, sets, params)
         sum(fl[l, t, o] for l in L if ton[l] == b) - sum(fl[l, t, o] for l in L if frn[l] == b) + 
         sum(pdis[s, t, o] for s in Ωs[b]) - sum(pch[s, t, o] for s in Ωs[b]) +
         sum(pdisk[s, t, o] for s in Ωsk[b]) - sum(pchk[s, t, o] for s in Ωsk[b])
-        == sum(Pd[d]*Pdf[o]*Pdg[t] for d in Ωd[b]) - sum(ls[d, t, o] for d in Ωd[b])
+        == sum(Pd[d]*Pdf[(d, o)]*Pdg[t] for d in Ωd[b]) - sum(ls[d, t, o] for d in Ωd[b])
     )
 
     # Load shedding cannot exceed demand
-    @constraint(model, [d in D, t in T, o in O], ls[d, t, o] <= Pd[d] * Pdf[o] * Pdg[t])
+    @constraint(model, [d in D, t in T, o in O], ls[d, t, o] <= Pd[d] * Pdf[(d, o)] * Pdg[t])
     
     # DC power flow for existing lines
     @constraint(model, [e in E, t in T, o in O], f[e, t, o] == 
@@ -187,8 +206,8 @@ function add_single_node_constraints!(model, sets, params)
         sum(pg[g, t, o] for g in G) + sum(pk[k, t, o] for k in K)  + 
         sum(pdis[s, t, o] for s in S) - sum(pch[s, t, o] for s in S) +
         sum(pchk[s, t, o] for s in Sk) - sum(pdisk[s, t, o] for s in Sk)
-        == sum(Pd[d]*Pdf[o]*Pdg[t] for d in D) - sum(ls[d, t, o] for d in D) 
+        == sum(Pd[d]*Pdf[(d, o)]*Pdg[t] for d in D) - sum(ls[d, t, o] for d in D)
     )
 
-    @constraint(model, [d in D, t in T, o in O], ls[d, t, o] <= Pd[d] * Pdf[o] * Pdg[t])
+    @constraint(model, [d in D, t in T, o in O], ls[d, t, o] <= Pd[d] * Pdf[(d, o)] * Pdg[t])
 end

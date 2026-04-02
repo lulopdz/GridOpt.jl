@@ -1,20 +1,25 @@
 # ==============================================================================
 # Set Objective Function
 function set_tgep_objective!(model, config::TEPConfig, sets, params)
-    G, K, Sk, D, L, T, O = sets[:G], sets[:K], sets[:Sk], sets[:D], sets[:L], sets[:T], sets[:O]
-    α, ρ = params[:α], params[:ρ]
-    pg, pk, ls, pkmax, β, em = model[:pg], model[:pk], model[:ls], model[:pkmax], model[:β], model[:em]
-    ekmax = model[:ekmax]
-    Pgcost, Pkcost, Pkinv, Flinv = params[:Pgcost], params[:Pkcost], params[:Pkinv], params[:Flinv]
-    Skinv = params[:Skinv]
+    G, D, L, T, O = sets[:G], sets[:D], sets[:L], sets[:T], sets[:O]
+    K, Sk = sets[:K], sets[:Sk]
+
+    pg, pk, ls = model[:pg], model[:pk], model[:ls]
+    pkmax, ekmax = model[:pkmax], model[:ekmax]
+    em = model[:em]
+
+    Pgcost, Pkcost = params[:Pgcost], params[:Pkcost]
+    Pkinv, Skinv, Flinv = params[:Pkinv], params[:Skinv], params[:Flinv]
     Pgfixed, Pkfixed = params[:Pgfixed], params[:Pkfixed]
-    Ctax = params[:Ctax]
     Pgmax = params[:Pgmax]
-    Fmaxl = params[:Fmaxl]
     VoLL = params[:VoLL]
+    α, ρ = params[:α], params[:ρ]
+    
+    Ctax = params[:Ctax]
+    Fmaxl = params[:Fmaxl]
     
     # Operating costs
-    op_cost = sum(
+    @expression(model, op_cost, sum(
         α[t] * sum(
             ρ[o] * (
                 sum(Pgcost[g] * pg[g, t, o] for g in G) +
@@ -22,35 +27,47 @@ function set_tgep_objective!(model, config::TEPConfig, sets, params)
                 sum(VoLL[d] * ls[d, t, o] for d in D)
             ) for o in O
         ) for t in T
-    )
+    ))
     
     # Investment costs
+    @expression(model, gen_stor_inv, sum(
+        α[t] * (
+            sum(Pkinv[k] * sum(pkmax[k, τ] for τ in T if τ <= t) for k in K) +
+            sum(Skinv[s] * sum(ekmax[s, τ] for τ in T if τ <= t) for s in Sk)
+        ) for t in T
+    ))
+
+    # Network investment
     if config.include_network
-        inv_cost = sum(
-            α[t] * (
-                sum(Pkinv[k] * sum(pkmax[k, τ] for τ in T if τ <= t) for k in K) +
-                sum(Skinv[s] * sum(ekmax[s, τ] for τ in T if τ <= t) for s in Sk) +
-                sum(Flinv[l] * Fmaxl[l] * sum(β[l, τ] for τ in T if τ <= t) for l in L)
-            ) for t in T
-        )
-    else
-        inv_cost = sum(
-            α[t] * sum(Pkinv[k] * sum(pkmax[k, τ] for τ in T if τ <= t) for k in K)
+        β = model[:β] # Safe to extract here
+        Fmaxl = params[:Fmaxl]
+        @expression(model, net_inv, sum(
+            α[t] * sum(Flinv[l] * Fmaxl[l] * sum(β[l, τ] for τ in T if τ <= t) for l in L)
             for t in T
-        )
-    end
+        ))
+        @expression(model, inv_cost, gen_stor_inv + net_inv)
+    else
+        @expression(model, inv_cost, gen_stor_inv)
+    end    
 
     # Fixed annual costs
-    fixed_cost = sum(
+    @expression(model, fixed_cost, sum(
         α[t] * (
             sum(Pgfixed[g] * Pgmax[g] for g in G) +
             sum(Pkfixed[k] * sum(pkmax[k, τ] for τ in T if τ <= t) for k in K)
         ) for t in T
-    )
+    ))
 
     # Carbon policy cost: $/tCO2 times annualized weighted emissions.
-    carbon_cost = sum(α[t] * sum(ρ[o] * Ctax[t] * em[t, o] for o in O) for t in T)
-    carbon_cost = 0
-    
+    if config.include_carbon_tax
+        Ctax = params[:Ctax]
+        @expression(model, carbon_cost, sum(
+            α[t] * sum(ρ[o] * Ctax[t] * em[t, o] for o in O) 
+            for t in T
+        ))
+    else
+        @expression(model, carbon_cost, 0.0)
+    end
+
     @objective(model, Min, op_cost + inv_cost + fixed_cost + carbon_cost)
 end

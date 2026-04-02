@@ -9,18 +9,17 @@ function process_tgep_sets(data)
     
     # Sets and Indices
     B = nodes[!, :id]
-    G = gen[!, :id]
     D = load[!, :id]
     E = line[!, :id]
-
-    K = gcand[!, :id]
-    L = tcand[!, :id]
     
+    G = gen[!, :id]
+    K = gcand[!, :id]
     S = sto[!, :id]
     Sk = stocand[!, :id]
-
+    L = tcand[!, :id]
+    
     T = econ[!, :t]
-    O = sce[!, :hour]
+    O = unique(sce[!, :hour])
     
     # Node mappings
     Bmap = Dict(nodes.node_code .=> nodes.id)
@@ -30,15 +29,30 @@ function process_tgep_sets(data)
     b_sl = nrow(gen) > 0 ? Bmap[gen.node_code[argmax(gen.capacity_mw)]] : first(B)
     Slack = [b_sl]
     
-    # Items per bus
-    items_b(df, b) = [df.id[i] for i in 1:nrow(df) if df.node_code[i] == ncode[b]]
+    # ==========================================================================
+    # Grouping
+    function group_by_bus(df, bus_keys)
+        # Initialize an empty array of the correct ID type for every bus
+        id_type = eltype(df[!, :id])
+        grouped = Dict(b => id_type[] for b in bus_keys)
+        
+        for r in eachrow(df)
+            bus_id = get(Bmap, r.node_code, nothing)
+            if bus_id !== nothing
+                push!(grouped[bus_id], r.id)
+            else
+                @warn "Node code $(r.node_code) in $(r.id) not found in nodes data."
+            end
+        end
+        return grouped
+    end
     
-    # Sets grouped by bus
-    Ωg = Dict(b => items_b(gen, b) for b in B)
-    Ωk = Dict(b => items_b(gcand, b) for b in B)
-    Ωd = Dict(b => items_b(load, b) for b in B)
-    Ωs = Dict(b => items_b(sto, b) for b in B)
-    Ωsk = Dict(b => items_b(stocand, b) for b in B)
+    # Sets grouped by bus (Fast execution)
+    Ωg = group_by_bus(gen, B)
+    Ωk = group_by_bus(gcand, B)
+    Ωd = group_by_bus(load, B)
+    Ωs = group_by_bus(sto, B)
+    Ωsk = group_by_bus(stocand, B)
 
     # Line topology
     fr  = Dict(r.id => Bmap[r.node_code_st] for r in eachrow(line))

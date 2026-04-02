@@ -29,22 +29,21 @@ function load_tgep_data(data_path::String, project::String)
     
     return Dict{Symbol, Any}(
         # Existing infrastructure
-        :nodes => read_df("nodes"),
-        :gen => read_df("gen"),
-        :load => read_df("load"),
-        :line => read_df("line"),
-        # Candidate infrastructure
-        :gcand => read_df("gcand"),
-        :tcand => read_df("tcand"),
+        :nodes => read_df("topology/nodes"),
+        :load => read_df("topology/load"),
+        :line => read_df("topology/line"),
+        # Assets
+        :gen => read_df("assets/gen"),
+        :gcand => read_df("assets/gcand"),
+        :sto => read_df("assets/sto"),
+        :stocand => read_df("assets/stocand"),
+        :tcand => read_df("assets/tcand"),
         # Economic and scenario data
-        :econ => read_df("economic"),
-        :sce => read_df("scenario"),
+        :econ => read_df("tech_econ/economic"),
+        :gtech => read_df("tech_econ/gtech"),
+        :ttech => read_df("tech_econ/ttech"),
         # Technology data (if needed)
-        :gtech => read_df("gtech"),
-        :ttech => read_df("ttech"),
-        # Storage infrastructure
-        :sto => read_df("sto"),
-        :stocand => read_df("stocand"),
+        :sce => read_df("timeseries/scenario"),
     )
 end
 

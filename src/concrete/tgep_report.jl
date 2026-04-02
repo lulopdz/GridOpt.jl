@@ -83,15 +83,19 @@ end
 
 function load_shedding_df(model, sets, params)
     D, T, O = sets[:D], sets[:T], sets[:O]
-    ls = model[:ls]
     Pd, Pdf, Pdg = params[:Pd], params[:Pdf], params[:Pdg]
     ρ = params[:ρ]
     Sb = params[:Sbase]
 
+    ls_vals = value.(model[:ls])
+
     df = DataFrame([(; 
-        load_id = d, year = t, hour = o, weight = ρ[o],
-        shed_mw = round(Sb * value(ls[d, t, o]), digits=2),
-        demand_mw = round(Sb * Pd[d] * Pdf[o] * Pdg[t], digits=2)
+        load_id = d, 
+        year = t, 
+        hour = o, 
+        weight = ρ[o],
+        shed_mw = round(Sb * ls_vals[d, t, o], digits=2),
+        demand_mw = round(Sb * Pd[d] * Pdf[(d, o)] * Pdg[t], digits=2) # <-- Fixed Tuple Indexing
     ) for d in D for t in T for o in O])
     
     df.shed_pct = ifelse.(df.demand_mw .> 0, round.(100.0 .* df.shed_mw ./ df.demand_mw, digits=2), 0.0)
@@ -193,12 +197,16 @@ function cost_breakdown(model, cfg::TEPConfig, sets, params)
     ) for t in T])
     fixed.total_fixed = round.(fixed.existing_fixed .+ fixed.candidate_fixed, digits=2)
 
-    carbon = DataFrame([(; 
-        year = t,
-        carbon_cost = round(has_em ? α[t] * 
-                sum(ρ[o] * PriceFactor * Ctax[t] * 
-                value(model[:em][t, o]) for o in O) : 0.0, digits=2)
-    ) for t in T])
+    if cfg.include_carbon_tax
+        carbon = DataFrame([(; 
+            year = t,
+            carbon_cost = round(has_em ? α[t] * 
+                    sum(ρ[o] * PriceFactor * Ctax[t] * 
+                    value(model[:em][t, o]) for o in O) : 0.0, digits=2)
+        ) for t in T])
+    else
+        carbon = DataFrame([(; year = t, carbon_cost = 0.0) for t in T])
+    end
 
     total_op, total_load_shed, total_inv = sum(op.total_op), sum(op.load_shed), sum(inv.total_inv)
     total_fixed, total_carbon = sum(fixed.total_fixed), sum(carbon.carbon_cost)
@@ -213,20 +221,59 @@ end
 
 function yearly_supply_demand(model, sets, params)
     G, K, D, T, O = sets[:G], sets[:K], sets[:D], sets[:T], sets[:O]
-    ρ, pdf, pdg = params[:ρ], params[:Pdf], params[:Pdg]
-    Sb, PriceFactor = params[:Sbase], params[:PriceFactor]
+    S, Sk = sets[:S], sets[:Sk] # Brought in storage sets
+    
+    ρ, Pdf, Pdg = params[:ρ], params[:Pdf], params[:Pdg]
+    Pd = params[:Pd]
+    Sb = params[:Sbase]
     
     gwh = 1.0 / 1000.0
-    df = DataFrame([(;
-        year = t,
-        demand_gwh = sum(ρ[o] * Sb * params[:Pd][d] * pdf[o] * pdg[t] for d in D, o in O) * gwh,
-        existing_gen_gwh = sum(ρ[o] * Sb * value(model[:pg][g, t, o]) for g in G, o in O) * gwh,
-        candidate_gen_gwh = sum(ρ[o] * Sb * value(model[:pk][k, t, o]) for k in K, o in O) * gwh
-    ) for t in T])
     
-    df.total_gen_gwh = df.existing_gen_gwh .+ df.candidate_gen_gwh
-    df.balance_gap_gwh = df.total_gen_gwh .- df.demand_gwh
-    return df
+    # Extract variable values once for speed
+    pg = value.(model[:pg])
+    pk = value.(model[:pk])
+    ls = value.(model[:ls])
+    
+    pch, pdis = value.(model[:pch]), value.(model[:pdis])
+    pchk, pdisk = value.(model[:pchk]), value.(model[:pdisk])
+
+    results = []
+
+    for t in T
+        # 1. Base Demand (Fixed Tuple Indexing)
+        demand_gwh = sum(ρ[o] * Sb * Pd[d] * Pdf[(d, o)] * Pdg[t] for d in D, o in O) * gwh
+        
+        # 2. Load Shedding (Unmet Demand)
+        shed_gwh = sum(ρ[o] * Sb * ls[d, t, o] for d in D, o in O) * gwh
+
+        # 3. Generation Supply
+        exist_gen_gwh = sum(ρ[o] * Sb * pg[g, t, o] for g in G, o in O) * gwh
+        cand_gen_gwh = sum(ρ[o] * Sb * pk[k, t, o] for k in K, o in O) * gwh
+        
+        # 4. Net Storage Supply (Discharge minus Charge)
+        exist_sto_net_gwh = sum(ρ[o] * Sb * (pdis[s, t, o] - pch[s, t, o]) for s in S, o in O) * gwh
+        cand_sto_net_gwh = sum(ρ[o] * Sb * (pdisk[s, t, o] - pchk[s, t, o]) for s in Sk, o in O) * gwh
+        
+        # 5. Totals and Balance
+        total_supply_gwh = exist_gen_gwh + cand_gen_gwh + exist_sto_net_gwh + cand_sto_net_gwh
+        
+        # The balance gap should be extremely close to 0.0 (accounting for load shedding)
+        balance_gap_gwh = (total_supply_gwh + shed_gwh) - demand_gwh
+
+        push!(results, (;
+            year = t,
+            demand_gwh = demand_gwh,
+            load_shed_gwh = shed_gwh,
+            existing_gen_gwh = exist_gen_gwh,
+            candidate_gen_gwh = cand_gen_gwh,
+            existing_sto_net_gwh = exist_sto_net_gwh,
+            candidate_sto_net_gwh = cand_sto_net_gwh,
+            total_supply_gwh = total_supply_gwh,
+            balance_gap_gwh = balance_gap_gwh
+        ))
+    end
+    
+    return DataFrame(results)
 end
 
 function save_results(model, cfg::TEPConfig, sets, params, out_dir::String)
@@ -267,7 +314,7 @@ function summarize_results(model, cfg::TEPConfig, sets, params; save_to::Union{S
     println("="^50)
     println("Y  | Demand (GWh) | Ex gen (GWh) | Ca gen (GWh) | Total (GWh)  | Gap (GWh)")
     for row in eachrow(yearly)
-        println("$(row.year)  | $(fmtcol(row.demand_gwh)) | $(fmtcol(row.existing_gen_gwh)) | $(fmtcol(row.candidate_gen_gwh)) | $(fmtcol(row.total_gen_gwh)) | $(fmtcol(row.balance_gap_gwh))")
+        println("$(row.year)  | $(fmtcol(row.demand_gwh)) | $(fmtcol(row.existing_gen_gwh)) | $(fmtcol(row.candidate_gen_gwh)) | $(fmtcol(row.total_supply_gwh)) | $(fmtcol(row.balance_gap_gwh))")
     end
 
     costs = cost_breakdown(model, cfg, sets, params)
@@ -346,18 +393,26 @@ end
 
 function plot_cap_dem(model, cfg::TEPConfig, sets, params; pdf_path::Union{String,Nothing}=nothing)
     G, K, D, T, O = sets[:G], sets[:K], sets[:D], sets[:T], sets[:O]
-    Sb = cfg.per_unit ? 100.0 : 1.0
+    
+    # Safely pull the base directly from the parsed parameters
+    Sb = params[:Sbase]
     yrs = collect(T)
 
-    ex_cap = fill(sum(params[:Pgmax][g] for g in G) * Sb, length(yrs))
-    add_yr = [sum(value(model[:pkmax][k, t]) for k in K; init=0.0) * Sb for t in yrs]
+    # Performance optimization: extract all candidate capacities at once
+    pkmax_vals = value.(model[:pkmax])
+
+    # Calculate Existing and Candidate Capacities (with safe initializers)
+    ex_cap = fill(sum(params[:Pgmax][g] for g in G; init=0.0) * Sb, length(yrs))
+    add_yr = [sum(pkmax_vals[k, t] for k in K; init=0.0) * Sb for t in yrs]
     cand_cap = cumsum(add_yr)
 
+    # Calculate Peak Demand using the geographic tuple index: Pdf[(d, o)]
     peak_dem = [
-        maximum(sum(params[:Pd][d] * params[:Pdf][o] * params[:Pdg][t] for d in D) * Sb for o in O) 
+        maximum(sum(params[:Pd][d] * params[:Pdf][(d, o)] * params[:Pdg][t] for d in D; init=0.0) * Sb for o in O) 
         for t in yrs
     ]
 
+    # Plotting Architecture
     p = areaplot(
         yrs, [ex_cap cand_cap],
         seriestype=:bar,
@@ -365,7 +420,8 @@ function plot_cap_dem(model, cfg::TEPConfig, sets, params; pdf_path::Union{Strin
         color=[PLOT_COLORS.gray PLOT_COLORS.purple],
         lw=0, yformatter=:plain,
         xlabel="Years", ylabel="Cap (MW)", 
-        ylims=(0, (maximum(ex_cap) + maximum(cand_cap)) * 1.5)
+        # Bulletproof y-axis scaling
+        ylims=(0, max(maximum(ex_cap) + maximum(cand_cap), maximum(peak_dem; init=0.0)) * 1.5)
     )
 
     plot!(
@@ -381,8 +437,9 @@ function plot_cap_dem(model, cfg::TEPConfig, sets, params; pdf_path::Union{Strin
 end
 
 function plot_cap_type(model, cfg::TEPConfig, sets, params; pdf_path::Union{String,Nothing}=nothing)
-    K, T = sets[:K], sets[:T]
-    Sb = cfg.per_unit ? 100.0 : 1.0
+    # 1. Bring in the Candidate Storage Set (Sk)
+    K, Sk, T = sets[:K], sets[:Sk], sets[:T]
+    Sb = params[:Sbase] # Use centralized Sbase
     yrs = collect(T)
 
     ptype = get(params, :Pktype, Dict())
@@ -391,21 +448,40 @@ function plot_cap_type(model, cfg::TEPConfig, sets, params; pdf_path::Union{Stri
     typs = sort(unique(ktyp.(K)))
     isempty(typs) && (typs = ["none"])
 
+    # Performance Optimization: Extract values once
+    pkmax_vals = value.(model[:pkmax])
+    ekmax_vals = value.(model[:ekmax])
+
+    # 2. Base Generator Matrix
     cap_mat = [
-        sum((value(model[:pkmax][k, t]) for k in K if ktyp(k) == typ); init=0.0) * Sb / 1000.0 
+        sum((pkmax_vals[k, t] for k in K if ktyp(k) == typ); init=0.0) * Sb / 1000.0 
         for t in yrs, typ in typs
     ]
 
-    lbls = permutedims([t == "none" ? "N/A" : t for t in typs])
+    # 3. Storage Discharge Matrix
+    sto_mat = [
+        sum((ekmax_vals[s, t] / 4.0 for s in Sk); init=0.0) * Sb / 1000.0
+        for t in yrs
+    ]
+
+    # 4. Combine Matrices and Labels
+    full_mat = hcat(cap_mat, sto_mat)
+    
+    stack_labels = [t == "none" ? "N/A" : t for t in typs]
+    push!(stack_labels, "storage_discharge")
+    lbls = permutedims(stack_labels)
+
+    # Calculate safe upper bound for plotting
+    y_max = isempty(full_mat) ? 1.0 : maximum(sum(full_mat, dims=2); init=0.0) * 1.5
 
     p = areaplot(
-        yrs, cap_mat,
+        yrs, full_mat,
         seriestype=:bar,
         label=lbls,
         lw=0, yformatter=:plain,
         legend=:outertop, 
         xlabel="Years", ylabel="New Cap (GW)", 
-        ylims=(0, maximum(sum(cap_mat, dims=2); init=0.0) * 1.5)
+        ylims=(0, y_max) 
     )
 
     if !isnothing(pdf_path)
@@ -413,11 +489,13 @@ function plot_cap_type(model, cfg::TEPConfig, sets, params; pdf_path::Union{Stri
         savefig(p, pdf_path)
         println("✓ Saved: $pdf_path")
     end
+    
 end
 
 function plot_total_cap_type(model, cfg::TEPConfig, sets, params; pdf_path::Union{String,Nothing}=nothing)
-    G, K, T = sets[:G], sets[:K], sets[:T]
-    sb = cfg.per_unit ? 100.0 : 1.0
+    # 1. Bring in Storage Sets
+    G, K, S, Sk, T = sets[:G], sets[:K], sets[:S], sets[:Sk], sets[:T]
+    Sb = params[:Sbase]
     yrs = collect(T)
 
     pgtype = get(params, :Pgtype, Dict())
@@ -429,29 +507,54 @@ function plot_total_cap_type(model, cfg::TEPConfig, sets, params; pdf_path::Unio
     typs = sort(unique(vcat(gtyp.(G), ktyp.(K))))
     isempty(typs) && (typs = ["none"])
 
+    # Performance Optimization: Extract values once
+    pkmax_vals = value.(model[:pkmax])
+    ekmax_vals = value.(model[:ekmax]) # Grab Energy instead of Discharge Power
+
+    # 2. Base Generator Matrices
     ex_cap = [
-        sum((params[:Pgmax][g] for g in G if gtyp(g) == typ); init=0.0) * sb / 1000.0 
+        sum((params[:Pgmax][g] for g in G if gtyp(g) == typ); init=0.0) * Sb / 1000.0 
         for typ in typs
     ]
     
     new_cap = [
-        sum((value(model[:pkmax][k, t]) for k in K if ktyp(k) == typ); init=0.0) * sb / 1000.0 
+        sum((pkmax_vals[k, t] for k in K if ktyp(k) == typ); init=0.0) * Sb / 1000.0 
         for t in yrs, typ in typs
     ]
     
-    cap_mat = permutedims(ex_cap) .+ cumsum(new_cap, dims=1)
+    gen_mat = permutedims(ex_cap) .+ cumsum(new_cap, dims=1)
 
-    lbls = permutedims([t == "none" ? "N/A" : t for t in typs])
+    # 3. Storage Power Estimation (Energy / 4 hours)
+    # Estimate existing storage power
+    ex_sto_cap = sum((params[:Emax][s] / 4.0 for s in S); init=0.0) * Sb / 1000.0
+    
+    # Estimate candidate storage power
+    new_sto_cap = [
+        sum((ekmax_vals[s, t] / 4.0 for s in Sk); init=0.0) * Sb / 1000.0
+        for t in yrs
+    ]
+    
+    sto_mat = ex_sto_cap .+ cumsum(new_sto_cap)
+
+    # 4. Combine Matrices and Labels
+    full_mat = hcat(gen_mat, sto_mat)
+    
+    stack_labels = [t == "none" ? "N/A" : t for t in typs]
+    push!(stack_labels, "Storage") # Updated label for clarity
+    lbls = permutedims(stack_labels)
+
+    # Safe y-axis scaling limit
+    y_max = isempty(full_mat) ? 1.0 : maximum(sum(full_mat, dims=2); init=0.0) * 1.2
 
     p = areaplot(
-        yrs, cap_mat,
+        yrs, full_mat,
         seriestype=:bar,
         label=lbls,
         lw=0, yformatter=:plain,
         legend=:outertop,
         legendcolumns=4,
         xlabel="Year", ylabel="Total Capacity (GW)",
-        ylims=(0, maximum(sum(cap_mat, dims=2); init=0.0) * 1.2)
+        ylims=(0, max(y_max, 1.0))
     )
 
     if !isnothing(pdf_path)
@@ -459,11 +562,12 @@ function plot_total_cap_type(model, cfg::TEPConfig, sets, params; pdf_path::Unio
         savefig(p, pdf_path)
         println("✓ Saved: $pdf_path")
     end
+
 end
 
 function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Union{String,Nothing}=nothing)
     G, K, D, S, Sk, T, O = sets[:G], sets[:K], sets[:D], sets[:S], sets[:Sk], sets[:T], sets[:O]
-    sb = cfg.per_unit ? 100.0 : 1.0
+    Sb = params[:Sbase] # Use centralized Sbase
     hrs = collect(O)
 
     pgtype = get(params, :Pgtype, Dict())
@@ -475,18 +579,19 @@ function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Uni
     typs = sort(unique(vcat(gtyp.(G), ktyp.(K))))
     isempty(typs) && (typs = ["none"])
     pdf, pdg = params[:Pdf], params[:Pdg]
+    
     stack_labels = [typ == "none" ? "N/A" : typ for typ in typs]
     push!(stack_labels, "Storage Discharge")
     push!(stack_labels, "Storage Charge")
     push!(stack_labels, "Load Shed")
     lbls = permutedims(stack_labels)
 
-    # Group generators once by type to avoid repeated filtering in hourly loops.
+    # Group generators once by type
     g_by_typ = Dict(typ => [g for g in G if gtyp(g) == typ] for typ in typs)
     k_by_typ = Dict(typ => [k for k in K if ktyp(k) == typ] for typ in typs)
 
-    # Hourly demand profile (without yearly growth) is reused for every year.
-    demand_base = [sum(params[:Pd][d] * pdf[o] for d in D; init=0.0) * sb for o in hrs]
+    # Hourly demand profile: Fixed tuple indexing pdf[(d, o)]
+    demand_base = [sum(params[:Pd][d] * pdf[(d, o)] for d in D; init=0.0) * Sb for o in hrs]
 
     plots = Dict{Any, Any}()
     demand_max = maximum(demand_base; init=0.0) * maximum(values(pdg); init=1.0)
@@ -495,31 +600,44 @@ function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Uni
         mkpath(dirname(pdf_path))
     end
 
+    # Performance Optimization: Extract solver values once before looping
+    pg_val = value.(model[:pg])
+    pk_val = value.(model[:pk])
+    pdis_val = value.(model[:pdis])
+    pdisk_val = value.(model[:pdisk])
+    pch_val = value.(model[:pch])
+    pchk_val = value.(model[:pchk])
+    ls_val = value.(model[:ls])
+
     for t in T
         disp_core = [
             (
-                sum((value(model[:pg][g, t, o]) for g in g_by_typ[typ]); init=0.0) +
-                sum((value(model[:pk][k, t, o]) for k in k_by_typ[typ]); init=0.0)
-            ) * sb
+                sum((pg_val[g, t, o] for g in g_by_typ[typ]); init=0.0) +
+                sum((pk_val[k, t, o] for k in k_by_typ[typ]); init=0.0)
+            ) * Sb
             for o in hrs, typ in typs
         ]
 
         dem = [demand_base[i] * pdg[t] for i in eachindex(hrs)]
+        
         dis_sto = [
             (
-                sum((value(model[:pdis][s, t, o]) for s in S); init=0.0) +
-                sum((value(model[:pdisk][s, t, o]) for s in Sk); init=0.0)
-            ) * sb
+                sum((pdis_val[s, t, o] for s in S); init=0.0) +
+                sum((pdisk_val[s, t, o] for s in Sk); init=0.0)
+            ) * Sb
             for o in hrs
         ]
+        
         ch_sto = [
             -(
-                sum((value(model[:pch][s, t, o]) for s in S); init=0.0) +
-                sum((value(model[:pchk][s, t, o]) for s in Sk); init=0.0)
-            ) * sb
+                sum((pch_val[s, t, o] for s in S); init=0.0) +
+                sum((pchk_val[s, t, o] for s in Sk); init=0.0)
+            ) * Sb
             for o in hrs
         ]
-        shed = [sum(value(model[:ls][d, t, o]) for d in D; init=0.0) * sb for o in hrs]
+        
+        shed = [sum(ls_val[d, t, o] for d in D; init=0.0) * Sb for o in hrs]
+        
         disp_mat = hcat(disp_core, dis_sto, ch_sto, shed)
 
         # Include negative charging in axis limits so storage operation is visible.
@@ -543,7 +661,6 @@ function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Uni
         )
 
         if !isnothing(pdf_path)
-            mkpath(dirname(pdf_path))
             base, ext = splitext(pdf_path)
             out_path = isempty(ext) ? "$(pdf_path)_t$(t).pdf" : "$(base)_t$(t)$(ext)"
             savefig(p, out_path)
@@ -552,7 +669,7 @@ function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Uni
 
         plots[t] = p
     end
-
+    
 end
 
 function plot_emissions_by_type(model, cfg::TEPConfig, sets, params; pdf_path::Union{String,Nothing}=nothing)

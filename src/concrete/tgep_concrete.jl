@@ -26,7 +26,9 @@ function build_tgep_model(config::TEPConfig, data)
 
     # Add constraints
     add_generation_constraints!(model, sets, params)
-    add_investment_constraints!(model, sets)
+    if config.include_network
+        add_investment_constraints!(model, sets)
+    end
 
     # Add storage constraints
     add_storage_constraints!(model, sets, params)
@@ -52,10 +54,10 @@ function solve_tgep!(model, config::TEPConfig, sets, params)
     status = termination_status(model)
     
     if status == MOI.OPTIMAL || status == MOI.TIME_LIMIT
-        gap = relative_gap(model)
+        # gap = relative_gap(model)
         println("✓ Solution found (Status: $status)")
         println("  Total cost: \$", round(objective_value(model), digits=2))
-        println("  Optimality gap: ", round(gap * 100, digits=2), "%")
+        # println("  Optimality gap: ", round(gap * 100, digits=2), "%")
         println("  Solver time (s): ", round(solve_time(model), digits=2))
     else
         println("✗ No optimal solution found. Status: ", status)

@@ -109,6 +109,10 @@ function add_storage_constraints!(model, sets, params)
     # 2. Daily wrap-around for candidate storage
     @constraint(model, [s in Sk, t in T, d in 1:days], 
         sock[s, t, sth[d]] == sock[s, t, edh[d]] + η_chk[s] * pchk[s, t, edh[d]] - (1/η_disk[s]) * pdisk[s, t, edh[d]])
+
+    # Power cannot exceed Energy capacity
+    @constraint(model, [s in Sk, t in T], cum_psckmax[s, t] <= cum_ekmax[s, t])
+    @constraint(model, [s in Sk, t in T], cum_psdkmax[s, t] <= cum_ekmax[s, t])
 end
 
 # ==============================================================================

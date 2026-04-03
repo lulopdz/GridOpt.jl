@@ -19,8 +19,8 @@ DEFAULT_CONFIG = TEPConfig(
     true,               # include_network
     false,              # integers
     false,              # enforce_netzero
-    false,              # include_carbon_tax
-    :system,          # cf_resolution (:system, :regional, :nodal)
+    true,              # include_carbon_tax
+    :system,            # cf_resolution (:system, :regional, :nodal)
     true,               # per_unit
     1e25,                # bigM
     Gurobi.Optimizer    # solver

@@ -103,6 +103,64 @@ function load_shedding_df(model, sets, params)
     return df
 end
 
+function storage_operation_df(model, sets, params)
+    S, Sk, T, O = sets[:S], sets[:Sk], sets[:T], sets[:O]
+    ρ = params[:ρ]
+    Sb = params[:Sbase]
+
+    # Performance optimization: Extract all values once before looping
+    pch_v = value.(model[:pch])
+    pdis_v = value.(model[:pdis])
+    soc_v = value.(model[:soc])
+    
+    pchk_v = value.(model[:pchk])
+    pdisk_v = value.(model[:pdisk])
+    sock_v = value.(model[:sock])
+
+    results = []
+
+    for t in T, o in O
+        # 1. Existing Storage Operation
+        for s in S
+            push!(results, (;
+                storage_id = s,
+                status = "existing",
+                year = t,
+                hour = o,
+                weight = ρ[o],
+                charge_mw = round(Sb * pch_v[s, t, o], digits=2),
+                discharge_mw = round(Sb * pdis_v[s, t, o], digits=2),
+                net_discharge_mw = round(Sb * (pdis_v[s, t, o] - pch_v[s, t, o]), digits=2),
+                soc_mwh = round(Sb * soc_v[s, t, o], digits=2)
+            ))
+        end
+        
+        # 2. Candidate Storage Operation
+        for s in Sk
+            push!(results, (;
+                storage_id = s,
+                status = "candidate",
+                year = t,
+                hour = o,
+                weight = ρ[o],
+                charge_mw = round(Sb * pchk_v[s, t, o], digits=2),
+                discharge_mw = round(Sb * pdisk_v[s, t, o], digits=2),
+                net_discharge_mw = round(Sb * (pdisk_v[s, t, o] - pchk_v[s, t, o]), digits=2),
+                soc_mwh = round(Sb * sock_v[s, t, o], digits=2)
+            ))
+        end
+    end
+    
+    # If there is no storage at all, return an empty DataFrame with the correct columns
+    if isempty(results)
+        return DataFrame(storage_id=String[], status=String[], year=Int[], hour=Int[], 
+                         weight=Float64[], charge_mw=Float64[], discharge_mw=Float64[], 
+                         net_discharge_mw=Float64[], soc_mwh=Float64[])
+    end
+
+    return DataFrame(results)
+end
+
 function line_inv_df(model, cfg::TEPConfig, sets, params)
     cfg.include_network || return DataFrame()
     L, T = sets[:L], sets[:T]
@@ -284,7 +342,8 @@ function save_results(model, cfg::TEPConfig, sets, params, out_dir::String)
     CSV.write(joinpath(out_dir, "csv", "cap_storage_inv.csv"), storage_inv_df(model, sets, params))
     CSV.write(joinpath(out_dir, "csv", "gen_dispatch.csv"), gen_dispatch_df(model, sets, params))
     CSV.write(joinpath(out_dir, "csv", "load_shedding.csv"), load_shedding_df(model, sets, params))
-
+    CSV.write(joinpath(out_dir, "csv", "storage_operation.csv"), storage_operation_df(model, sets, params))
+    
     if cfg.include_network
         CSV.write(joinpath(out_dir, "csv", "line_inv.csv"), line_inv_df(model, cfg, sets, params))
         CSV.write(joinpath(out_dir, "csv", "line_flows.csv"), line_flow_df(model, cfg, sets, params))

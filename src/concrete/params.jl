@@ -14,8 +14,9 @@ function process_tgep_params(data, config::TEPConfig)
     default_voll = 1e4 / PriceFactor                       
 
     # Safe parsing helper for missing data
-    parse_float(x, default=0.0) = begin
-        if ismissing(x) return default end
+    function parse_float(x, default=0.0)
+        ismissing(x) && return default
+        x isa Number && return Float64(x) # Skip string conversion if it's already a number
         y = tryparse(Float64, string(x))
         return isnothing(y) ? default : y
     end

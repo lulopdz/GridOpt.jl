@@ -195,7 +195,6 @@ function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Uni
 
         # 4. Plot positives first (Building UP from 0)
         p = areaplot(
-            st=:steppre, 
             hrs, pos_mat,
             label=pos_lbls,
             legend=:outertop, lw=0,
@@ -207,7 +206,6 @@ function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Uni
 
         # 5. Plot negatives second (Building DOWN from 0)
         areaplot!(
-            st=:steppre,
             p, hrs, neg_mat,
             label=neg_lbls,
             lw=0
@@ -215,7 +213,6 @@ function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Uni
 
         # 6. Overlay the Demand
         plot!(
-            st=:steppre,
             p, hrs, dem,
             lw=2, color=:black, label="Demand"
         )

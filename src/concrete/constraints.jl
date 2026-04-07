@@ -73,7 +73,6 @@ function add_storage_constraints!(model, sets, params)
     @constraint(model, [s in S, t in T, o in O], pch[s, t, o] <= Pscmax[s])
     @constraint(model, [s in S, t in T, o in O], pdis[s, t, o] <= Psdmax[s])
     
-    # @constraint(model, [s in S, t in T, o in [1]], soc[s, t, o] == Einit[s] * Emax[s]) 
     # 1. Intra-day dynamics (Applies to hours 2-24, 26-48, etc.)
     @constraint(model, [s in S, t in T, o in O; !(o in sth)], 
         soc[s, t, o] == soc[s, t, o-1] + η_ch[s] * pch[s, t, o-1] - (1/η_dis[s]) * pdis[s, t, o-1])
@@ -102,6 +101,9 @@ function add_storage_constraints!(model, sets, params)
     @constraint(model, [s in Sk, t in T, o in O], pdisk[s, t, o] <= cum_psdkmax[s, t])
 
     # @constraint(model, [s in Sk, t in T, o in [1]], sock[s, t, o] == 0.0) 
+    # @constraint(model, [s in S, t in T, d in 1:days], soc[s, t, sth[d]] == Einit[s] * Emax[s])
+    # @constraint(model, [s in Sk, t in T, d in 1:days], sock[s, t, sth[d]] == 0.0)
+    
     # 1. Intra-day dynamics for candidate storage
     @constraint(model, [s in Sk, t in T, o in O; !(o in sth)], 
         sock[s, t, o] == sock[s, t, o-1] + η_chk[s] * pchk[s, t, o-1] - (1/η_disk[s]) * pdisk[s, t, o-1])

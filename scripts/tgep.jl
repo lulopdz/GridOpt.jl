@@ -11,7 +11,7 @@ using HiGHS, Gurobi
 
 # Include utilities
 include("../src/concrete/tgep_concrete.jl")
-include("../src/concrete/tgep_report.jl")
+include("../src/reporting/tgep_report.jl")
 
 # ==============================================================================
 # Default configurations

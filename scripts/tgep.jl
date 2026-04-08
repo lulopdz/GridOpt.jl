@@ -16,7 +16,7 @@ include("../src/reporting/tgep_report.jl")
 # ==============================================================================
 # Default configurations
 DEFAULT_CONFIG = TEPConfig(
-    true,              # include_network
+    false,              # include_network
     false,              # integers
     false,              # enforce_netzero
     false,               # include_carbon_tax

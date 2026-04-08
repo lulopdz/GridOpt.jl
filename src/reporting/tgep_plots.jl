@@ -25,8 +25,8 @@ function plot_new_cap_type(model, cfg::TEPConfig, sets, params; pdf_path::Union{
 
     full_mat = hcat(cap_mat, sto_mat)
     
-    stack_labels = [t == "none" ? "N/A" : titlecase(t) for t in typs]
-    push!(stack_labels, "Storage")
+    stack_labels = [t == "none" ? "N/A" : t for t in typs]
+    push!(stack_labels, "storage")
     lbls = permutedims(stack_labels)
 
     y_max = isempty(full_mat) ? 1.0 : maximum(sum(full_mat, dims=2); init=0.0) * 1.2
@@ -77,8 +77,8 @@ function plot_total_cap_type(model, cfg::TEPConfig, sets, params; pdf_path::Unio
 
     full_mat = hcat(gen_mat, sto_mat)
     
-    stack_labels = [t == "none" ? "N/A" : titlecase(t) for t in typs]
-    push!(stack_labels, "Storage")
+    stack_labels = [t == "none" ? "N/A" : t for t in typs]
+    push!(stack_labels, "storage")
     lbls = permutedims(stack_labels)
 
     # Calculate Peak Demand (GW) to match the bar chart units
@@ -104,7 +104,7 @@ function plot_total_cap_type(model, cfg::TEPConfig, sets, params; pdf_path::Unio
     # 2. Overlay the Peak Demand line
     scatter!(
         p, yrs, peak_dem,
-        marker=:diamond, markersize=3, color=:black, label="Demand"
+        marker=:diamond, markersize=3, color=:black, label="demand"
     )
 
     if !isnothing(pdf_path)
@@ -131,11 +131,11 @@ function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Uni
     
     # 1. Split labels into Positive and Negative to fix the stacking issue
     # (Also fixed the mismatch between the label order and matrix order)
-    pos_labels = [typ == "none" ? "N/A" : titlecase(typ) for typ in typs]
-    push!(pos_labels, "Sto Dis", "Load Shed") 
+    pos_labels = [t == "none" ? "N/A" : t for t in typs]
+    push!(pos_labels, "sto dis", "load shed") 
     pos_lbls = permutedims(pos_labels)
 
-    neg_labels = ["Sto Ch"]
+    neg_labels = ["sto ch"]
     neg_lbls = permutedims(neg_labels)
 
     # Dynamic legend columns (+1 accounts for the Demand line)
@@ -214,7 +214,7 @@ function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Uni
         # 6. Overlay the Demand
         plot!(
             p, hrs, dem,
-            lw=2, color=:black, label="Demand"
+            lw=2, color=:black, label="demand"
         )
 
         if !isnothing(pdf_path)
@@ -245,7 +245,7 @@ function plot_emissions_type(model, cfg::TEPConfig, sets, params; pdf_path::Unio
     isempty(typs) && (typs = ["none"])
     
     # 1. Cleaned up labels and dynamic legend columns
-    lbls = permutedims([typ == "none" ? "N/A" : titlecase(typ) for typ in typs])
+    lbls = permutedims([typ == "none" ? "N/A" : typ for typ in typs])
     col_legend = 1 + (length(typs) >= 4) + (length(typs) >= 8) + (length(typs) >= 12)
 
     # 2. Group generators once by type to avoid slow filtering inside loops

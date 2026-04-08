@@ -21,7 +21,7 @@ function set_theme()
         framestyle = :box,
         grid       = true,
         # size       = (480, 480),
-        size       = (480, 270), # 16:9 aspect ratio
+        size       = (520, 270), # 16:9 aspect ratio
         dpi        = 600,
         margin     = 2mm
     )

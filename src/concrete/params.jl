@@ -58,9 +58,10 @@ function process_tgep_params(data, config::TEPConfig)
     # Dynamic Geographic Routers
     # ==========================================================================
     function get_cf(r, h)
-        tech = lowercase(r.gen_type)
+        tech = lowercase(r.gen_type)        
         if tech ∉ ["wind", "solar"]
-            return 1.0 # Default 100% availability for thermal/baseload plants
+            fixed_cf = get_tech_param(gtech, r.gen_type, :capacity_factor)
+            return (ismissing(fixed_cf) || isnothing(fixed_cf)) ? 1.0 : Float64(fixed_cf)
         end
 
         target_nodal_dict = tech == "wind" ? nodal_wind : nodal_solar

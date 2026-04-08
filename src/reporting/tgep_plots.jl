@@ -11,7 +11,7 @@ function plot_new_cap_type(model, cfg::TEPConfig, sets, params; pdf_path::Union{
     typs = sort(unique(ktyp.(K)))
     isempty(typs) && (typs = ["none"])
 
-    col_legend = 1 + (length(typs) >= 4) + (length(typs) >= 8)
+    col_legend = 1 + (length(typs) >= 4) + (length(typs) >= 8) + (length(typs) >= 12)
 
     pkmax_vals = value.(model[:pkmax])
     ekmax_vals = value.(model[:ekmax])
@@ -34,7 +34,7 @@ function plot_new_cap_type(model, cfg::TEPConfig, sets, params; pdf_path::Union{
     p = areaplot(
         yrs, full_mat,
         seriestype=:bar, label=lbls, lw=0, yformatter=:plain,
-        legend=:outerright, legendcolumns=col_legend,
+        legend=:outertop, legendcolumns=col_legend,
         xlabel="Year", ylabel="New Capacity Added (GW)", 
         ylims=(0, max(y_max, 0.5)) 
     )
@@ -60,7 +60,7 @@ function plot_total_cap_type(model, cfg::TEPConfig, sets, params; pdf_path::Unio
     
     typs = sort(unique(vcat(gtyp.(G), ktyp.(K))))
     isempty(typs) && (typs = ["none"])
-    col_legend = 1 + (length(typs) >= 4) + (length(typs) >= 8)
+    col_legend = 1 + (length(typs) >= 4) + (length(typs) >= 8) + (length(typs) >= 12)
 
     pkmax_vals = value.(model[:pkmax])
     ekmax_vals = value.(model[:ekmax]) 
@@ -96,7 +96,7 @@ function plot_total_cap_type(model, cfg::TEPConfig, sets, params; pdf_path::Unio
     p = areaplot(
         yrs, full_mat,
         seriestype=:bar, label=lbls, lw=0, yformatter=:plain,
-        legend=:outerright, legendcolumns=col_legend,
+        legend=:outertop, legendcolumns=col_legend,
         xlabel="Year", ylabel="Total Capacity (GW)",
         ylims=(0, max(y_max, 0.5))
     )
@@ -139,7 +139,7 @@ function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Uni
     neg_lbls = permutedims(neg_labels)
 
     # Dynamic legend columns (+1 accounts for the Demand line)
-    dynamic_cols = cld(length(pos_labels) + length(neg_labels) + 1, 4)
+    col_legend = 1 + (length(typs) >= 4) + (length(typs) >= 8) + (length(typs) >= 12)
 
     g_by_typ = Dict(typ => [g for g in G if gtyp(g) == typ] for typ in typs)
     k_by_typ = Dict(typ => [k for k in K if ktyp(k) == typ] for typ in typs)
@@ -198,7 +198,7 @@ function plot_hourly_dispatch(model, cfg::TEPConfig, sets, params; pdf_path::Uni
             hrs, pos_mat,
             label=pos_lbls,
             legend=:outertop, lw=0,
-            legendcolumns=dynamic_cols,    
+            legendcolumns=col_legend,    
             xlabel="Hour", ylabel="Dispatch (MW)", 
             yformatter=:plain,
             ylims=(y_min, y_max)
@@ -246,7 +246,7 @@ function plot_emissions_type(model, cfg::TEPConfig, sets, params; pdf_path::Unio
     
     # 1. Cleaned up labels and dynamic legend columns
     lbls = permutedims([typ == "none" ? "N/A" : titlecase(typ) for typ in typs])
-    dynamic_cols = cld(length(typs), 4)
+    col_legend = 1 + (length(typs) >= 4) + (length(typs) >= 8) + (length(typs) >= 12)
 
     # 2. Group generators once by type to avoid slow filtering inside loops
     g_by_typ = Dict(typ => [g for g in G if gtyp(g) == typ] for typ in typs)
@@ -272,7 +272,7 @@ function plot_emissions_type(model, cfg::TEPConfig, sets, params; pdf_path::Unio
         label=lbls,
         lw=0, yformatter=:plain,
         legend=:outertop,
-        legendcolumns=dynamic_cols,
+        legendcolumns=col_legend,
         xlabel="Year", 
         ylabel="Emissions (MtCO2)",
         ylims=(0, max(y_max, 0.5))

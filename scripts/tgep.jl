@@ -16,13 +16,13 @@ include("../src/reporting/tgep_report.jl")
 # ==============================================================================
 # Default configurations
 DEFAULT_CONFIG = TEPConfig(
-    true,               # include_network
+    true,              # include_network
     false,              # integers
     false,              # enforce_netzero
-    true,              # include_carbon_tax
+    false,               # include_carbon_tax
     :system,            # cf_resolution (:system, :regional, :nodal)
     true,               # per_unit
-    1e25,                # bigM
+    1e25,               # bigM
     Gurobi.Optimizer    # solver
 )
 
@@ -32,7 +32,7 @@ config = DEFAULT_CONFIG
 
 pkg = "GridOpt.jl"
 data_path = joinpath(pwd(), pkg, "data", "planning")
-proj = "testnet"
+proj = "CODERS"
 
 # Load data
 data =  load_tgep_data(data_path, proj)
